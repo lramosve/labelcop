@@ -35,6 +35,14 @@ It is a take-home / proof-of-concept implementation. It does **not** integrate w
 
 The single vision request does OCR + field extraction + comparison in one structured-output call. There is no separate OCR step. This is the simplest way to hit the 5-second latency budget the stakeholder cited. (First measured end-to-end: ~3.3 s with `gpt-5.4-mini`.)
 
+## Approach
+
+- **Single-call vision.** OCR + field extraction + claim comparison happen in one structured-output call to the LLM. The prompt (`src/lib/verifier/prompt.ts`) carries the canonical regulatory text, defines the verdict vocabulary (`exact_match` / `semantic_match` / `mismatch` / `missing`), and pins the response to a JSON Schema enforced via OpenAI strict mode or Anthropic tool-use. Minimising round trips is what makes the 5-second budget reachable.
+- **Provider abstraction.** A `LabelVerifier` interface (`src/lib/verifier/types.ts`) backs the route handler; the OpenAI and Anthropic implementations only differ in how they invoke the SDK. Adding a third backend (Azure OpenAI, AWS Bedrock, etc.) is one file plus a `case` in the factory.
+- **Server-side authority on the warning.** The federal health warning is the most regulatorily load-bearing field. `postprocess.ts` re-derives the warning verdict deterministically: it counts canonical key phrases in the model's observed text — five or more accepts (tolerates the truncation the model sometimes does mid-transcription), two or fewer rejects (catches paraphrase), and the ambiguous middle defers to the model. Header-casing is checked separately from body wording, so a "Government Warning:" header is `needs_review` rather than a flat `reject`.
+- **Three-state triage verdict.** `approve` / `needs_review` / `reject` mirrors how an agent actually sorts a queue. Semantic-only differences (case, punctuation, spacing) flow to `needs_review` rather than auto-rejecting — directly addresses Dave Morrison's "STONE'S THROW vs Stone's Throw" judgment-call example.
+- **Two test tiers.** Unit tests (Tier 1, ~15 ms, no LLM) cover the post-processor and the batch logic so the regulatorily-critical paths are deterministic and free to run. Live-LLM evals (Tier 2) drive seven synthetic-label cases drawn from the stakeholder interviews against the real model so prompt regressions surface end-to-end.
+
 ## Running locally
 
 Requires Node.js 20+ and an API key for whichever provider you choose.
@@ -150,14 +158,20 @@ The overall verdict aggregates these:
 
 The country-of-origin field is skipped from aggregation when the applicant left it blank, since it is only required for imports.
 
-## Trade-offs and limitations
+## Assumptions
 
-- **Prototype only.** No persistence, no auth, no audit trail. A production deployment would need at minimum: per-agent sign-in, an audit log of every verification, and document retention rules per federal records-management policy.
-- **Single-image labels.** Real applications include front/back/neck label images. Adding multi-image support is a straightforward extension: send each image and have the model report which fields it sourced from which view.
-- **No structured ABV tolerance.** TTB allows tolerances on labelled ABV depending on beverage class (e.g. ±1.5% for some malt beverages, ±0.3% absolute for spirits). The current implementation defers to the model's judgment; encoding regulatory tolerances explicitly is a clean follow-up.
-- **Model confidence is implicit.** We surface the verdict but not a numeric confidence. For a production tool, exposing per-field confidence (and routing low-confidence items to human review) would improve trust.
-- **Outbound network.** Verification calls hit `api.openai.com` (default) or `api.anthropic.com`. The stakeholder mentioned TTB's outbound firewall is restrictive — a production deployment would need those endpoints whitelisted, or alternatively a private model endpoint (Azure OpenAI, AWS Bedrock, etc.). The provider abstraction makes that swap a localized change.
-- **Latency.** With a single vision call the typical end-to-end is 2–5 seconds. Batch parallelism is capped at 4 concurrent requests to be a polite API citizen; that cap is trivial to lift for a real deployment.
+- **One label image per submission.** Real COLA applications include front/back/neck label images; this prototype handles one. Multi-image support is a straightforward extension — send each image and have the model report which fields it sourced from which view.
+- **English-language US-market labels.** The canonical warning text is hard-coded from 27 CFR § 16.21 (US TTB).
+- **Stateless, no PII, no persistence.** Every verification is independent; nothing is logged or stored. Production would need at minimum: per-agent sign-in, an audit log of every verification, and document retention rules per federal records-management policy. Marcus called this out explicitly in his interview.
+- **Outbound traffic to `api.openai.com` / `api.anthropic.com` is permitted.** TTB's firewall reportedly blocks many endpoints (Marcus, again); a real deployment would need those whitelisted or a private model endpoint (Azure OpenAI, AWS Bedrock). The provider abstraction makes that swap a localized change.
+- **Model judgement is acceptable for unencoded regulatory tolerances.** TTB allows ABV tolerances by beverage class (e.g. ±1.5% on some malt beverages, ±0.3% absolute on spirits). The prototype defers to the model rather than encoding the rules explicitly; making them deterministic is a clean follow-up.
+- **Bold formatting of the warning header is judged by the model, not by us.** 27 CFR § 16.21 requires "GOVERNMENT WARNING:" in **both** all-caps **and** bold. The post-processor verifies all-caps deterministically; bold detection is left to the model's `headerAllCaps` reasoning.
+
+## Open trade-offs
+
+- **No per-field model confidence is surfaced.** A production tool would want per-field confidence so low-confidence items can be auto-routed to human review.
+- **Batch concurrency is capped at 4.** Polite-citizen default for the shared API key; trivial to lift for a real deployment.
+- **No fine-tuning, no RAG.** The canonical warning text is in the system prompt and the model uses general OCR + reasoning. A retrieval-augmented variant could let the system stay current as 27 CFR text evolves.
 
 ## Sources
 
