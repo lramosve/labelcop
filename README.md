@@ -16,7 +16,7 @@ After deployment, the application is available at the URL listed in the project'
 
 - **Single-label verify** — drop in an image, fill the claimed values, get a per-field verdict (`exact_match` / `semantic_match` / `mismatch` / `missing`) plus a dedicated government warning panel that independently checks (1) the warning is present, (2) the text is word-for-word the regulatory text from 27 CFR Part 16, and (3) the `GOVERNMENT WARNING:` header is in all caps.
 - **Batch verify** — drop a CSV (one row per label) plus the set of label images. LabelCop runs the verifier in parallel (configurable concurrency), shows a live progress table, and lets you export results as CSV.
-- **Provider-agnostic** — the LLM backend lives behind a `LabelVerifier` interface. Anthropic Claude and OpenAI GPT-5.5 implementations are both included. Switch with one env var.
+- **Provider-agnostic** — the LLM backend lives behind a `LabelVerifier` interface. OpenAI (GPT-5.4 / GPT-5.4-mini / GPT-5.5) and Anthropic Claude implementations are both included. Switch with one env var.
 - **Deterministic warning check** — the warning text and header-case verdicts are re-derived on the server against the regulatory text rather than trusting the model's self-report, so the most regulatorily-load-bearing check doesn't drift.
 - **Designed for non-technical agents** — large click targets, plain language, three-state badge (Approve / Needs Review / Reject) that mirrors how an agent actually triages.
 
@@ -26,12 +26,13 @@ After deployment, the application is available at the URL listed in the project'
 | --- | --- |
 | Framework | Next.js 15 (App Router) + React 19 + TypeScript |
 | Styling | Tailwind CSS v4 |
-| LLM (default) | Anthropic Claude Sonnet 4.6 (`claude-sonnet-4-6`) |
-| LLM (alternate) | OpenAI GPT-5.5 (`gpt-5.5`) |
+| LLM (default) | **OpenAI GPT-5.4-mini** (`gpt-5.4-mini`) — chosen for speed and cost on a task that's mostly OCR + structured comparison rather than deep reasoning |
+| LLM (alternate) | Anthropic Claude Sonnet 4.6 (`claude-sonnet-4-6`) |
+| Tests | Vitest (Tier 1 unit tests on the deterministic post-processor) |
 | CSV | Papa Parse |
 | Deployment | Vercel |
 
-The single Claude/OpenAI request does OCR + field extraction + comparison in one structured-output call. There is no separate OCR step. This is the simplest way to hit the 5-second latency budget the stakeholder cited.
+The single vision request does OCR + field extraction + comparison in one structured-output call. There is no separate OCR step. This is the simplest way to hit the 5-second latency budget the stakeholder cited. (First measured end-to-end: ~3.3 s with `gpt-5.4-mini`.)
 
 ## Running locally
 
@@ -54,11 +55,22 @@ npm run dev
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | yes | `anthropic` (default) or `openai` |
+| `LLM_PROVIDER` | yes | `openai` (default) or `anthropic` |
+| `OPENAI_API_KEY` | when `LLM_PROVIDER=openai` | your OpenAI API key |
+| `OPENAI_MODEL` | optional | overrides the default model `gpt-5.4-mini` |
 | `ANTHROPIC_API_KEY` | when `LLM_PROVIDER=anthropic` | your Anthropic API key |
 | `ANTHROPIC_MODEL` | optional | overrides the default model `claude-sonnet-4-6` |
-| `OPENAI_API_KEY` | when `LLM_PROVIDER=openai` | your OpenAI API key |
-| `OPENAI_MODEL` | optional | overrides the default model `gpt-5.5` |
+
+## Tests
+
+```bash
+npm test          # one-shot run
+npm run test:watch
+```
+
+The Tier 1 suite (in `src/lib/verifier/postprocess.test.ts`) covers the deterministic post-processor — overall verdict aggregation, government warning re-checks against 27 CFR § 16 wording, header case enforcement, country-of-origin optionality, and metadata pass-through. These run in milliseconds and do not call the LLM, so they are safe to run in CI without burning credits.
+
+A Tier 2 end-to-end eval script that exercises the live LLM against a battery of synthetic label cases is planned (`npm run eval`).
 
 ## Swapping LLM providers
 
@@ -75,7 +87,7 @@ src/lib/verifier/
   index.ts          ← Factory: reads LLM_PROVIDER and returns a verifier
 ```
 
-To swap providers: set `LLM_PROVIDER=openai` (and `OPENAI_API_KEY`) in your env and restart. The prompt, JSON schema, and post-processing are shared — only the SDK call changes.
+To swap providers: set `LLM_PROVIDER=anthropic` (and `ANTHROPIC_API_KEY`) in your env and restart. The prompt, JSON schema, and post-processing are shared — only the SDK call changes.
 
 To add a third provider (e.g., Azure, AWS Bedrock):
 
@@ -115,7 +127,7 @@ The country-of-origin field is skipped from aggregation when the applicant left 
 - **Single-image labels.** Real applications include front/back/neck label images. Adding multi-image support is a straightforward extension: send each image and have the model report which fields it sourced from which view.
 - **No structured ABV tolerance.** TTB allows tolerances on labelled ABV depending on beverage class (e.g. ±1.5% for some malt beverages, ±0.3% absolute for spirits). The current implementation defers to the model's judgment; encoding regulatory tolerances explicitly is a clean follow-up.
 - **Model confidence is implicit.** We surface the verdict but not a numeric confidence. For a production tool, exposing per-field confidence (and routing low-confidence items to human review) would improve trust.
-- **Outbound network.** Verification calls hit `api.anthropic.com` (default) or `api.openai.com`. The stakeholder mentioned TTB's outbound firewall is restrictive — a production deployment would need those endpoints whitelisted, or alternatively a private model endpoint (Bedrock, Azure OpenAI, etc.). The provider abstraction makes that swap a localized change.
+- **Outbound network.** Verification calls hit `api.openai.com` (default) or `api.anthropic.com`. The stakeholder mentioned TTB's outbound firewall is restrictive — a production deployment would need those endpoints whitelisted, or alternatively a private model endpoint (Azure OpenAI, AWS Bedrock, etc.). The provider abstraction makes that swap a localized change.
 - **Latency.** With a single vision call the typical end-to-end is 2–5 seconds. Batch parallelism is capped at 4 concurrent requests to be a polite API citizen; that cap is trivial to lift for a real deployment.
 
 ## Sources

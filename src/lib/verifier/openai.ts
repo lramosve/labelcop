@@ -8,7 +8,7 @@ import {
 import type { LabelVerifier, VerificationResult, VerifyInput } from "./types";
 import { finalizeResult } from "./postprocess";
 
-const DEFAULT_MODEL = "gpt-5.5";
+const DEFAULT_MODEL = "gpt-5.4-mini";
 
 export function createOpenAIVerifier(): LabelVerifier {
   const apiKey = process.env.OPENAI_API_KEY;

@@ -8,7 +8,7 @@ let cached: LabelVerifier | null = null;
 
 export function getVerifier(): LabelVerifier {
   if (cached) return cached;
-  const provider = (process.env.LLM_PROVIDER || "anthropic").toLowerCase() as Provider;
+  const provider = (process.env.LLM_PROVIDER || "openai").toLowerCase() as Provider;
   switch (provider) {
     case "openai":
       cached = createOpenAIVerifier();
