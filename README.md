@@ -2,15 +2,15 @@
 
 > AI-powered prototype for the **U.S. Alcohol and Tobacco Tax and Trade Bureau (TTB)** label-compliance review workflow.
 
+**Live app:** **https://labelcop.vercel.app**
+**Source:** https://github.com/lramosve/labelcop
+[![CI](https://github.com/lramosve/labelcop/actions/workflows/ci.yml/badge.svg)](https://github.com/lramosve/labelcop/actions/workflows/ci.yml)
+
 LabelCop takes (a) the values an applicant entered on their COLA application and (b) the actual label artwork, and tells a compliance agent in a few seconds whether the label matches the application and whether the mandatory federal health warning is correctly worded and formatted.
 
 It is a take-home / proof-of-concept implementation. It does **not** integrate with the production COLA system.
 
 ---
-
-## Demo
-
-After deployment, the application is available at the URL listed in the project's GitHub repo (look for the **Deployments** section on the right side of the repo home).
 
 ## Features
 
