@@ -132,7 +132,7 @@ CSV with the following header row (case-sensitive):
 imageFilename,brandName,classType,alcoholContent,netContents,producer,countryOfOrigin,beverageType
 ```
 
-`imageFilename` must match the name of one of the uploaded image files (case-insensitive). The Batch tab also includes a **Try sample batch** button that loads a three-label demo (CSV + matching images bundled in `/public/demo/`) so reviewers can exercise the flow in one click, plus a **Download CSV template** button for users starting from scratch.
+`imageFilename` must match the name of one of the uploaded image files (case-insensitive). The Batch tab also includes a **Try sample batch** button that loads a three-label demo (CSV + matching images bundled in `public/demo/` — see [docs/demo.md](docs/demo.md)) so reviewers can exercise the flow in one click, plus a **Download CSV template** button for users starting from scratch.
 
 ## Verdict semantics
 

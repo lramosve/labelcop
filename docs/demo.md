@@ -1,6 +1,6 @@
 # Demo fixtures
 
-Three synthetic alcohol-beverage label PNGs served as static assets at `/demo/<file>.png`. The Batch tab's **Try sample batch** button fetches them in-app, and you can also drag them from disk during a recorded walkthrough.
+Three synthetic alcohol-beverage label PNGs served as static assets at `/demo/<file>.png`. The Batch tab's **Try sample batch** button fetches them in-app, and you can also drag them from disk during a recorded walkthrough. The actual binary files live in [`../public/demo/`](../public/demo/).
 
 | File | Use for | What's "wrong" |
 | --- | --- | --- |
@@ -14,4 +14,4 @@ Regenerate any time with:
 npm run demo:fixtures
 ```
 
-The generator lives in [`../../scripts/generate-demo-fixtures.ts`](../../scripts/generate-demo-fixtures.ts) and reuses the same SVG → PNG renderer that the end-to-end eval uses (`scripts/eval/labels.ts`). No API calls.
+The generator lives in [`../scripts/generate-demo-fixtures.ts`](../scripts/generate-demo-fixtures.ts) and reuses the same SVG → PNG renderer (`scripts/eval/labels.ts`) that the end-to-end eval uses. No API calls.
