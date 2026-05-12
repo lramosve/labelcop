@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 interface Props {
   file: File | null;
@@ -21,22 +21,26 @@ export function UploadZone({ file, previewUrl, onChange }: Props) {
     onChange(f);
   };
 
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragging(false);
-      const dropped = e.dataTransfer.files?.[0] ?? null;
-      accept(dropped);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    accept(e.dataTransfer.files?.[0] ?? null);
+  }
 
   return (
     <div>
       <label className="block text-sm font-medium text-slate-700 mb-2">Label Image</label>
       <div
+        role="button"
+        tabIndex={0}
+        aria-label={file ? `Replace label image (current: ${file.name})` : "Upload a label image"}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -44,7 +48,7 @@ export function UploadZone({ file, previewUrl, onChange }: Props) {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         className={
-          "rounded-lg border-2 border-dashed transition-colors cursor-pointer p-4 grid place-items-center text-center " +
+          "rounded-lg border-2 border-dashed transition-colors cursor-pointer p-4 grid place-items-center text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 " +
           (dragging
             ? "border-brand-500 bg-brand-50"
             : "border-slate-300 bg-slate-50 hover:bg-slate-100")

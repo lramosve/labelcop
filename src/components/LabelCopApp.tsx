@@ -23,7 +23,10 @@ export function LabelCopApp() {
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-md bg-brand-700 text-white grid place-items-center font-bold text-lg shadow-sm">
+            <div
+              aria-hidden="true"
+              className="h-10 w-10 rounded-md bg-brand-700 text-white grid place-items-center font-bold text-lg shadow-sm"
+            >
               LC
             </div>
             <div>

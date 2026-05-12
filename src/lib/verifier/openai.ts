@@ -16,7 +16,10 @@ export function createOpenAIVerifier(): LabelVerifier {
     throw new Error("OPENAI_API_KEY is not set");
   }
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
-  const client = new OpenAI({ apiKey });
+  // maxRetries (default 2) covers 429 / 5xx / connection errors with
+  // exponential backoff inside the SDK. Bumping to 3 for the batch flow,
+  // where a transient blip across a 200-row run is otherwise quite painful.
+  const client = new OpenAI({ apiKey, maxRetries: 3 });
 
   return {
     provider: "openai",

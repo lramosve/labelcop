@@ -16,7 +16,10 @@ export function createAnthropicVerifier(): LabelVerifier {
     throw new Error("ANTHROPIC_API_KEY is not set");
   }
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
-  const client = new Anthropic({ apiKey });
+  // maxRetries (default 2) covers 429 / 5xx / connection errors with
+  // exponential backoff inside the SDK. Bumping to 3 for the batch flow,
+  // where a transient blip across a 200-row run is otherwise quite painful.
+  const client = new Anthropic({ apiKey, maxRetries: 3 });
 
   return {
     provider: "anthropic",
