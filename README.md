@@ -3,6 +3,7 @@
 > AI-powered prototype for the **U.S. Alcohol and Tobacco Tax and Trade Bureau (TTB)** label-compliance review workflow.
 
 **Live app:** **https://labelcop.vercel.app**
+**Demo video:** https://www.loom.com/share/335208ebbd804a6c8fab113e449521f2
 **Source:** https://github.com/lramosve/labelcop
 [![CI](https://github.com/lramosve/labelcop/actions/workflows/ci.yml/badge.svg)](https://github.com/lramosve/labelcop/actions/workflows/ci.yml)
 
