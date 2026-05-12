@@ -68,7 +68,7 @@ export function LabelCopApp() {
           <span>
             Prototype only. Not for use in production COLA workflows. Source:{" "}
             <a
-              href="https://github.com/"
+              href="https://github.com/lramosve/labelcop"
               className="text-brand-700 hover:underline"
               target="_blank"
               rel="noreferrer"
