@@ -2,42 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
-import type { LabelClaim } from "@/lib/verifier";
-import type { VerificationResult, OverallVerdict } from "@/lib/verifier/types";
+import type { OverallVerdict } from "@/lib/verifier/types";
 import { ResultPanel } from "./ResultPanel";
-
-interface BatchRow {
-  rowIndex: number;
-  imageFilename: string;
-  claim: LabelClaim;
-  status: "queued" | "running" | "done" | "error" | "missing_image";
-  result?: VerificationResult;
-  error?: string;
-}
-
-const TEMPLATE_HEADERS = [
-  "imageFilename",
-  "brandName",
-  "classType",
-  "alcoholContent",
-  "netContents",
-  "producer",
-  "countryOfOrigin",
-  "beverageType",
-];
-
-const TEMPLATE_ROWS = [
-  [
-    "old_tom_750ml.png",
-    "OLD TOM DISTILLERY",
-    "Kentucky Straight Bourbon Whiskey",
-    "45% Alc./Vol. (90 Proof)",
-    "750 mL",
-    "Old Tom Distillery, Bardstown, KY",
-    "",
-    "spirits",
-  ],
-];
+import {
+  TEMPLATE_HEADERS,
+  TEMPLATE_ROWS,
+  buildResultsCsvRecords,
+  csvRecordToBatchRow,
+  imageKey,
+  markMissingImages,
+  rowsWithoutImage,
+  type BatchRow,
+} from "./batch";
 
 export function BatchLabelView() {
   const [rows, setRows] = useState<BatchRow[]>([]);
@@ -60,7 +36,7 @@ export function BatchLabelView() {
     return counts;
   }, [rows]);
 
-  const matchedCount = rows.filter((r) => imageFiles[r.imageFilename.toLowerCase()]).length;
+  const matchedCount = rows.filter((r) => imageFiles[imageKey(r.imageFilename)]).length;
   const canRun = rows.length > 0 && matchedCount === rows.length && !running;
 
   function onCsvSelected(file: File) {
@@ -69,23 +45,7 @@ export function BatchLabelView() {
       header: true,
       skipEmptyLines: true,
       complete: (parsed) => {
-        const next: BatchRow[] = parsed.data.map((r, i) => ({
-          rowIndex: i,
-          imageFilename: (r.imageFilename ?? "").trim(),
-          claim: {
-            brandName: (r.brandName ?? "").trim(),
-            classType: (r.classType ?? "").trim(),
-            alcoholContent: (r.alcoholContent ?? "").trim(),
-            netContents: (r.netContents ?? "").trim(),
-            producer: (r.producer ?? "").trim(),
-            countryOfOrigin: (r.countryOfOrigin ?? "").trim() || undefined,
-            beverageType:
-              ((r.beverageType ?? "").trim().toLowerCase() as LabelClaim["beverageType"]) ||
-              undefined,
-          },
-          status: "queued",
-        }));
-        setRows(next);
+        setRows(parsed.data.map((r, i) => csvRecordToBatchRow(r, i)));
       },
     });
   }
@@ -102,7 +62,7 @@ export function BatchLabelView() {
   }
 
   function downloadTemplate() {
-    const csv = Papa.unparse({ fields: TEMPLATE_HEADERS, data: TEMPLATE_ROWS });
+    const csv = Papa.unparse({ fields: [...TEMPLATE_HEADERS], data: TEMPLATE_ROWS });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -117,14 +77,10 @@ export function BatchLabelView() {
     const concurrency = 4;
 
     // Mark image-less rows up front.
-    setRows((prev) =>
-      prev.map((r) =>
-        imageFiles[r.imageFilename.toLowerCase()] ? r : { ...r, status: "missing_image" },
-      ),
-    );
+    setRows((prev) => markMissingImages(prev, Object.keys(imageFiles)));
 
     const workQueue = rows
-      .filter((r) => imageFiles[r.imageFilename.toLowerCase()])
+      .filter((r) => imageFiles[imageKey(r.imageFilename)])
       .map((r) => r.rowIndex);
 
     let cursor = 0;
@@ -138,7 +94,7 @@ export function BatchLabelView() {
     async function processOne(idx: number) {
       const row = rowsRef.current[idx];
       if (!row) return;
-      const image = imageFiles[row.imageFilename.toLowerCase()];
+      const image = imageFiles[imageKey(row.imageFilename)];
       if (!image) return;
       updateRow(idx, { status: "running" });
       try {
@@ -166,22 +122,7 @@ export function BatchLabelView() {
   }
 
   function exportResults() {
-    const records = rows.map((r) => ({
-      imageFilename: r.imageFilename,
-      brandName: r.claim.brandName,
-      status: r.status,
-      overall: r.result?.overall ?? "",
-      warningPresent: r.result?.governmentWarning.present ?? "",
-      warningExactText: r.result?.governmentWarning.exactTextMatch ?? "",
-      warningHeaderAllCaps: r.result?.governmentWarning.headerAllCaps ?? "",
-      fieldsExact: r.result?.fields.filter((f) => f.verdict === "exact_match").length ?? "",
-      fieldsSemantic: r.result?.fields.filter((f) => f.verdict === "semantic_match").length ?? "",
-      fieldsMismatch: r.result?.fields.filter((f) => f.verdict === "mismatch").length ?? "",
-      fieldsMissing: r.result?.fields.filter((f) => f.verdict === "missing").length ?? "",
-      latencyMs: r.result?.latencyMs ?? "",
-      error: r.error ?? "",
-    }));
-    const csv = Papa.unparse(records);
+    const csv = Papa.unparse(buildResultsCsvRecords(rows));
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -247,12 +188,11 @@ export function BatchLabelView() {
             </span>
             {matchedCount < rows.length && (
               <span className="text-amber-700">
-                — missing: {rows
-                  .filter((r) => !imageFiles[r.imageFilename.toLowerCase()])
+                — missing: {rowsWithoutImage(rows, Object.keys(imageFiles))
                   .map((r) => r.imageFilename)
                   .slice(0, 3)
                   .join(", ")}
-                {rows.filter((r) => !imageFiles[r.imageFilename.toLowerCase()]).length > 3 && "…"}
+                {rowsWithoutImage(rows, Object.keys(imageFiles)).length > 3 && "…"}
               </span>
             )}
           </div>

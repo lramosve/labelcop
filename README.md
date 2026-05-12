@@ -72,7 +72,12 @@ npm test          # one-shot run
 npm run test:watch
 ```
 
-`src/lib/verifier/postprocess.test.ts` exercises the deterministic post-processor — overall verdict aggregation, government warning re-checks (paraphrased text rejection, OCR truncation tolerance via the canonical-key-phrase safety net, header case enforcement), country-of-origin optionality, and metadata pass-through. Runs in milliseconds, never calls the LLM, and is safe to run in CI without burning credits.
+Two suites, both free and deterministic:
+
+- **`src/lib/verifier/postprocess.test.ts`** (12 tests) — the deterministic post-processor: overall verdict aggregation, government warning re-checks (paraphrased text rejection, OCR truncation tolerance via the canonical-key-phrase safety net, header case enforcement), country-of-origin optionality, and metadata pass-through.
+- **`src/components/batch.test.ts`** (9 tests) — the pure logic behind the Batch tab: CSV record → `LabelClaim` mapping (whitespace trimming, optional countryOfOrigin, beverage-type normalization, tolerant column handling), case-insensitive image-filename matching, `missing_image` row marking, and results-CSV column shape.
+
+Run in milliseconds, never call the LLM, safe for CI.
 
 ### Tier 2 — end-to-end evals (live LLM)
 

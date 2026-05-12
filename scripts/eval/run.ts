@@ -194,6 +194,13 @@ async function main() {
           ms: 0,
           fieldsObserved: "",
           notes: `ERROR: ${msg}`,
+          warning: {
+            present: false,
+            exactTextMatch: false,
+            headerAllCaps: false,
+            observedHeader: null,
+            observedText: null,
+          },
         });
       }
     }
