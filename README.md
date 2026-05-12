@@ -28,7 +28,7 @@ It is a take-home / proof-of-concept implementation. It does **not** integrate w
 | Styling | Tailwind CSS v4 |
 | LLM (default) | **OpenAI GPT-5.4-mini** (`gpt-5.4-mini`) — chosen for speed and cost on a task that's mostly OCR + structured comparison rather than deep reasoning |
 | LLM (alternate) | Anthropic Claude Sonnet 4.6 (`claude-sonnet-4-6`) |
-| Tests | Vitest (Tier 1 unit tests on the deterministic post-processor) |
+| Tests & evals | Vitest unit tests (21 tests over the post-processor and the batch logic) + a live-LLM end-to-end eval (`npm run eval`, 7 cases) |
 | CSV | Papa Parse |
 | Deployment | Vercel |
 
