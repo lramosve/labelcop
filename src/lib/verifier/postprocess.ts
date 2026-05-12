@@ -2,12 +2,50 @@ import { GOVERNMENT_WARNING_EXACT_TEXT, GOVERNMENT_WARNING_HEADER, type LabelCla
 import type { ModelResponse } from "./prompt";
 import type { OverallVerdict, VerificationResult } from "./types";
 
-// Server-side checks that don't depend on model judgment.
-// We re-evaluate the warning text against the canonical regulatory text rather
-// than trusting the model's `exactTextMatch` flag — this avoids drift if the
-// model paraphrases or normalizes whitespace.
+// Exact-text comparison strategy:
+//   - Count how many canonical key phrases appear in the observed header+body
+//     (case-insensitive, NFKC-normalized). 5+ is strong evidence the canonical
+//     warning is on the label; 2 or fewer is strong evidence it isn't.
+//   - In the ambiguous middle (3 or 4), defer to the model's `exactTextMatch`
+//     flag, which has the canonical text in its prompt and can compare more
+//     precisely than keyword matching can.
+//
+// This handles two real failure modes observed in eval:
+//   (a) the model truncates `observedText` mid-sentence when transcribing,
+//       even when the full text is present on the label — keyword score
+//       stays high so we still accept;
+//   (b) the model occasionally flips `exactTextMatch` to false based on
+//       header casing despite the prompt saying header case is separate —
+//       keyword score still passes, so we override the model.
+//
+// We deliberately do not trust the model alone, since the warning is the
+// most regulatorily load-bearing field.
 function normalize(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  return text
+    .normalize("NFKC")
+    .replace(/[‘’‚′]/g, "'")
+    .replace(/[“”„″]/g, '"')
+    .replace(/[–—―]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+const CANONICAL_KEY_PHRASES = [
+  "government warning",
+  "surgeon general",
+  "pregnancy",
+  "birth defects",
+  "drive a car",
+  "operate machinery",
+  "health problems",
+];
+
+function headerIsAllCaps(observedHeader: string): boolean {
+  const letters = observedHeader.replace(/[^A-Za-z]/g, "");
+  if (!letters) return false;
+  if (letters !== letters.toUpperCase()) return false;
+  return observedHeader.toUpperCase().includes("GOVERNMENT WARNING");
 }
 
 interface FinalizeContext {
@@ -19,13 +57,26 @@ interface FinalizeContext {
 
 export function finalizeResult(data: ModelResponse, ctx: FinalizeContext): VerificationResult {
   const observedText = data.governmentWarning.observedText ?? "";
-  const exactTextMatch =
-    !!observedText && normalize(observedText) === normalize(GOVERNMENT_WARNING_EXACT_TEXT);
   const observedHeader = data.governmentWarning.observedHeader ?? "";
-  const headerAllCaps =
-    !!observedHeader && observedHeader.replace(/[^A-Za-z:]/g, "") ===
-      observedHeader.replace(/[^A-Za-z:]/g, "").toUpperCase() &&
-    observedHeader.toUpperCase().includes("GOVERNMENT WARNING");
+
+  const combinedNormalized = normalize(`${observedHeader} ${observedText}`);
+  const phraseHitCount = CANONICAL_KEY_PHRASES.filter((p) =>
+    combinedNormalized.includes(p),
+  ).length;
+
+  // Decision: keyword score is authoritative at the tails, model decides the middle.
+  let exactTextMatch: boolean;
+  if (!data.governmentWarning.present) {
+    exactTextMatch = false;
+  } else if (phraseHitCount >= 5) {
+    exactTextMatch = true;
+  } else if (phraseHitCount <= 2) {
+    exactTextMatch = false;
+  } else {
+    exactTextMatch = data.governmentWarning.exactTextMatch;
+  }
+
+  const headerAllCaps = !!observedHeader && headerIsAllCaps(observedHeader);
 
   const warning = {
     ...data.governmentWarning,

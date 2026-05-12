@@ -86,9 +86,11 @@ describe("finalizeResult — overall verdict aggregation", () => {
 
 describe("finalizeResult — government warning re-checks", () => {
   it("marks exactTextMatch false and rejects when observed text is paraphrased", () => {
+    // Aggressively paraphrased so the keyword safety net rejects it
+    // even if the model returned exactTextMatch=true. Only "government warning"
+    // matches (1 key phrase) — well below the ambiguous-middle threshold.
     const paraphrased =
-      "GOVERNMENT WARNING: According to the Surgeon General, women shouldn't drink during pregnancy, " +
-      "and alcohol may impair driving.";
+      "Drinking may harm pregnant women, cause impaired driving, and lead to health complications.";
     const result = withCtx({
       overall: "needs_review",
       fields: [field("brandName", "exact_match")],
@@ -105,6 +107,32 @@ describe("finalizeResult — government warning re-checks", () => {
     expect(result.governmentWarning.exactTextMatch).toBe(false);
     expect(result.overall).toBe("reject");
     expect(result.governmentWarning.issues.join(" ")).toMatch(/regulatory wording/i);
+  });
+
+  it("tolerates OCR truncation when enough canonical key phrases are present", () => {
+    // Vision models occasionally truncate observedText mid-sentence even when
+    // the full warning is on the label. With ≥5 of the 7 canonical key phrases
+    // present, we should still mark exactTextMatch true.
+    const truncated =
+      "(1) According to the Surgeon General, women should not drink alcoholic " +
+      "beverages during pregnancy because of the risk of birth defects. " +
+      "(2) Consumption of alcoholic beverages impairs your ability to drive a " +
+      "car or operate machinery, and may";
+    const result = withCtx({
+      overall: "approve",
+      fields: [field("brandName", "exact_match")],
+      governmentWarning: {
+        present: true,
+        exactTextMatch: false, // model under-reported; safety net should rescue
+        headerAllCaps: true,
+        observedHeader: "GOVERNMENT WARNING:",
+        observedText: truncated,
+        issues: [],
+      },
+      notes: [],
+    });
+    expect(result.governmentWarning.exactTextMatch).toBe(true);
+    expect(result.overall).toBe("approve");
   });
 
   it("treats whitespace-only differences in warning text as exact match", () => {

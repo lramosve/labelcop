@@ -61,16 +61,39 @@ npm run dev
 | `ANTHROPIC_API_KEY` | when `LLM_PROVIDER=anthropic` | your Anthropic API key |
 | `ANTHROPIC_MODEL` | optional | overrides the default model `claude-sonnet-4-6` |
 
-## Tests
+## Tests and evals
+
+The project has two tiers of automated checks.
+
+### Tier 1 — unit tests (free, fast, deterministic)
 
 ```bash
 npm test          # one-shot run
 npm run test:watch
 ```
 
-The Tier 1 suite (in `src/lib/verifier/postprocess.test.ts`) covers the deterministic post-processor — overall verdict aggregation, government warning re-checks against 27 CFR § 16 wording, header case enforcement, country-of-origin optionality, and metadata pass-through. These run in milliseconds and do not call the LLM, so they are safe to run in CI without burning credits.
+`src/lib/verifier/postprocess.test.ts` exercises the deterministic post-processor — overall verdict aggregation, government warning re-checks (paraphrased text rejection, OCR truncation tolerance via the canonical-key-phrase safety net, header case enforcement), country-of-origin optionality, and metadata pass-through. Runs in milliseconds, never calls the LLM, and is safe to run in CI without burning credits.
 
-A Tier 2 end-to-end eval script that exercises the live LLM against a battery of synthetic label cases is planned (`npm run eval`).
+### Tier 2 — end-to-end evals (live LLM)
+
+```bash
+npm run eval                 # ~8 seconds, costs cents
+npm run eval -- --save       # also writes the generated label PNGs to scripts/eval/out/
+```
+
+`scripts/eval/run.ts` deterministically renders seven synthetic alcohol labels via SVG→PNG (`scripts/eval/labels.ts`) and asserts the verifier's overall verdict on each. The cases mirror the stakeholder concerns from the discovery interviews:
+
+| Case | What it tests | Expected verdict |
+| --- | --- | --- |
+| `happy_path` | Label matches claim exactly, warning fully compliant | `approve` |
+| `brand_case_diff` | Brand case-only difference (Dave's STONE'S THROW vs Stone's Throw) | `needs_review` |
+| `abv_mismatch` | Claim ABV materially differs from label | `reject` |
+| `net_contents_format` | "750 mL" vs "750ML" — formatting only | `approve` or `needs_review` |
+| `warning_paraphrased` | Warning body wording is not the canonical text | `reject` |
+| `warning_header_lowercase` | Body correct, header rendered "Government Warning:" (Jenny's exact case) | `needs_review` |
+| `warning_missing` | Label has no government warning at all | `reject` |
+
+Last clean run on `openai/gpt-5.4-mini`: **7/7 passing in ~8 s wall clock**.
 
 ## Swapping LLM providers
 

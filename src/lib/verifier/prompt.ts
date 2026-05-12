@@ -20,8 +20,24 @@ ${GOVERNMENT_WARNING_EXACT_TEXT}
 ${WARNING_FORMATTING_RULES.map((r) => `   - ${r}`).join("\n")}
    The header "${GOVERNMENT_WARNING_HEADER}" must be in ALL CAPS on the label.
 
+   Two warning fields you must populate independently:
+   - "exactTextMatch": TRUE if and only if the warning's body wording on the
+     label matches the canonical text above verbatim (allowing differences in
+     header casing — those are reported separately). Set to FALSE if any
+     wording is paraphrased, words are missing, or sentences are altered.
+   - "headerAllCaps": TRUE if and only if the literal characters of the
+     header on the label are uppercase (e.g. "GOVERNMENT WARNING:" is TRUE;
+     "Government Warning:" is FALSE). A correct-but-not-all-caps header is
+     a formatting defect, NOT a text-wording defect — keep these signals
+     separate so the reviewer can distinguish "text is wrong" from "header
+     case is wrong".
+
+   Always populate "observedText" with the full body text you see on the
+   label (you may omit the header from "observedText" — it goes in
+   "observedHeader"). Do not truncate.
+
 3. FIELD COMPARISON. For each claimed field, return one of these verdicts:
-   - "exact_match": the label text is character-equivalent to the expected value, ignoring leading/trailing whitespace.
+   - "exact_match": the label text is CHARACTER-BY-CHARACTER identical to the expected value, including case and punctuation, after only trimming leading/trailing whitespace. Any difference in case ("OLD TOM" vs "Old Tom") or punctuation ("750 mL" vs "750ML") is NOT exact_match — it is semantic_match. Reserve exact_match for true character-for-character equivalence.
    - "semantic_match": the label text means the same thing but differs in capitalization, punctuation, spacing, word order, ordering of equivalent units, or trivial typographic variation. Examples that are SEMANTIC matches:
        * Expected "STONE'S THROW" vs Observed "Stone's Throw"
        * Expected "45% Alc./Vol. (90 Proof)" vs Observed "Alc. 45% By Vol."

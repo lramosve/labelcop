@@ -29,3 +29,6 @@ yarn-error.log*
 next-env.d.ts
 .idea
 .vscode
+
+# Eval — generated label PNGs (use `npm run eval -- --save` to write them locally)
+scripts/eval/out/
