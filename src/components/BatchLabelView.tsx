@@ -5,6 +5,8 @@ import Papa from "papaparse";
 import type { OverallVerdict } from "@/lib/verifier/types";
 import { ResultPanel } from "./ResultPanel";
 import {
+  SAMPLE_BATCH_BASE_CLAIM,
+  SAMPLE_BATCH_IMAGES,
   TEMPLATE_HEADERS,
   TEMPLATE_ROWS,
   buildResultsCsvRecords,
@@ -59,6 +61,39 @@ export function BatchLabelView() {
       }
       return next;
     });
+  }
+
+  async function loadSampleBatch() {
+    // Pulls the three demo PNGs that ship in /public/demo and hand-builds a
+    // matching three-row batch so a reviewer can click "Verify 3 labels"
+    // immediately, with no need to download the template, find matching
+    // images, and upload them separately.
+    try {
+      const files = await Promise.all(
+        SAMPLE_BATCH_IMAGES.map(async (name) => {
+          const r = await fetch(`/demo/${name}`);
+          if (!r.ok) throw new Error(`Failed to fetch /demo/${name} (HTTP ${r.status})`);
+          const blob = await r.blob();
+          return new File([blob], name, { type: "image/png" });
+        }),
+      );
+      const nextImages: Record<string, File> = {};
+      for (const f of files) nextImages[imageKey(f.name)] = f;
+      const nextRows: BatchRow[] = SAMPLE_BATCH_IMAGES.map((name, i) => ({
+        rowIndex: i,
+        imageFilename: name,
+        claim: { ...SAMPLE_BATCH_BASE_CLAIM },
+        status: "queued",
+      }));
+      setImageFiles(nextImages);
+      setRows(nextRows);
+      setCsvName("Sample batch");
+    } catch (e) {
+      console.error("Failed to load sample batch:", e);
+      alert(
+        "Could not load the sample batch images. Check the browser console for details.",
+      );
+    }
   }
 
   function downloadTemplate() {
@@ -148,13 +183,23 @@ export function BatchLabelView() {
       <div className="rounded-xl border border-slate-200 bg-white p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">Batch Verification</h2>
-          <button
-            type="button"
-            onClick={downloadTemplate}
-            className="text-sm text-brand-700 hover:underline"
-          >
-            Download CSV template
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={loadSampleBatch}
+              disabled={running || rows.length > 0}
+              className="text-sm text-brand-700 hover:underline disabled:text-slate-400 disabled:no-underline"
+            >
+              Try sample batch
+            </button>
+            <button
+              type="button"
+              onClick={downloadTemplate}
+              className="text-sm text-brand-700 hover:underline"
+            >
+              Download CSV template
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

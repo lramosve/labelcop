@@ -29,7 +29,7 @@ export const TEMPLATE_HEADERS = [
 
 export const TEMPLATE_ROWS: string[][] = [
   [
-    "old_tom_750ml.png",
+    "01-perfect-label.png",
     "OLD TOM DISTILLERY",
     "Kentucky Straight Bourbon Whiskey",
     "45% Alc./Vol. (90 Proof)",
@@ -39,6 +39,25 @@ export const TEMPLATE_ROWS: string[][] = [
     "spirits",
   ],
 ];
+
+// Filenames of the demo PNGs served from /public/demo/. The "Try sample batch"
+// button fetches these and a hand-crafted CSV so a reviewer can exercise the
+// batch flow without finding their own labels.
+export const SAMPLE_BATCH_IMAGES = [
+  "01-perfect-label.png",
+  "02-lowercase-warning-header.png",
+  "03-missing-warning.png",
+] as const;
+
+export const SAMPLE_BATCH_BASE_CLAIM: LabelClaim = {
+  brandName: "OLD TOM DISTILLERY",
+  classType: "Kentucky Straight Bourbon Whiskey",
+  alcoholContent: "45% Alc./Vol. (90 Proof)",
+  netContents: "750 mL",
+  producer: "Old Tom Distillery, Bardstown, KY",
+  countryOfOrigin: undefined,
+  beverageType: "spirits",
+};
 
 /** Lowercase a filename for case-insensitive matching against uploaded images. */
 export function imageKey(filename: string): string {

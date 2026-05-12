@@ -11,7 +11,10 @@ import { renderLabel, type LabelContent } from "./eval/labels";
 import { GOVERNMENT_WARNING_EXACT_TEXT } from "../src/lib/verifier/ttb";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT = join(__dirname, "..", "demo");
+// Demo fixtures live in /public so they're statically served by Next.js
+// at /demo/<file>.png — that lets the "Try sample batch" button fetch them
+// in-app, while the user can also drag them from disk during the recording.
+const OUT = join(__dirname, "..", "public", "demo");
 
 const CANONICAL_HEADER = "GOVERNMENT WARNING:";
 const CANONICAL_BODY = GOVERNMENT_WARNING_EXACT_TEXT.replace(CANONICAL_HEADER, "").trim();
