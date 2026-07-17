@@ -8,6 +8,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderLabel, type LabelContent } from "./eval/labels";
+import { glareAndLowLight } from "./eval/degrade";
 import { GOVERNMENT_WARNING_EXACT_TEXT } from "../src/lib/verifier/ttb";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,18 @@ const FIXTURES: { name: string; label: LabelContent; note: string }[] = [
     label: { ...PERFECT, warningHeader: null, warningBody: null },
     note: "No federal health warning anywhere on the label. Use for the reject demo.",
   },
+  {
+    name: "04-wine-table-wine.png",
+    label: {
+      ...PERFECT,
+      brandName: "SONOMA RIDGE CELLARS",
+      classType: "Cabernet Sauvignon",
+      alcoholContent: "Table Wine",
+      netContents: "750 mL",
+      producer: "Sonoma Ridge Cellars, Sonoma, CA",
+    },
+    note: 'Wine label stating "Table Wine" instead of a numeric ABV — pair with Beverage Type = Wine and Alcohol Content claim = "Table Wine" to demo the beverage-type-aware rule (approve, not reject-on-missing-ABV).',
+  },
 ];
 
 async function main() {
@@ -55,6 +68,16 @@ async function main() {
     await writeFile(path, png);
     console.log(`✓ ${f.name}  (${(png.length / 1024).toFixed(1)} KB) — ${f.note}`);
   }
+
+  // Imperfect-image demo fixture: same compliant label, degraded to simulate
+  // a real phone photo (glare + low light) via scripts/eval/degrade.ts.
+  const perfectPng = await renderLabel(PERFECT);
+  const degraded = await glareAndLowLight(perfectPng);
+  const degradedName = "05-glare-and-low-light.jpg";
+  await writeFile(join(OUT, degradedName), degraded);
+  console.log(
+    `✓ ${degradedName}  (${(degraded.length / 1024).toFixed(1)} KB) — Same compliant label, with simulated glare/low-light. Use to demo the imageQuality banner — the model still reads it correctly but flags the capture quality.`,
+  );
 }
 
 main().catch((e) => {
