@@ -58,6 +58,24 @@ const FIXTURES: { name: string; label: LabelContent; note: string }[] = [
     },
     note: 'Wine label stating "Table Wine" instead of a numeric ABV — pair with Beverage Type = Wine and Alcohol Content claim = "Table Wine" to demo the beverage-type-aware rule (approve, not reject-on-missing-ABV).',
   },
+  {
+    name: "06-multi-image-front.png",
+    label: { ...PERFECT, warningHeader: null, warningBody: null },
+    note: "Front label with no warning at all. Attach together with 06-multi-image-back.png to demo multi-image support — the warning should be found on the second image instead of falsely flagged missing.",
+  },
+  {
+    name: "06-multi-image-back.png",
+    label: {
+      brandName: "",
+      classType: "",
+      alcoholContent: "",
+      netContents: "",
+      producer: "",
+      warningHeader: CANONICAL_HEADER,
+      warningBody: CANONICAL_BODY,
+    },
+    note: "Back label containing only the government warning. Attach together with 06-multi-image-front.png.",
+  },
 ];
 
 async function main() {
