@@ -7,7 +7,13 @@
 
 export const TARGET_LATENCY_MS = 5_000;
 export const VERIFY_TIMEOUT_MS = 20_000;
-export const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB
+export const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB per image
+
+// A single physical product can legally split its required disclosures
+// across more than one label (front/brand label, back/strip label, neck
+// label) — the government warning in particular is very often on the back
+// label, not the front. 4 covers front/back/neck/closure with headroom.
+export const MAX_IMAGES_PER_LABEL = 4;
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;

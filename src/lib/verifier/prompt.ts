@@ -45,17 +45,19 @@ ${WARNING_FORMATTING_RULES.map((r) => `   - ${r}`).join("\n")}
        * Expected "750 mL" vs Observed "750ML"
        * Expected "Old Tom Distillery, Bardstown, KY" vs Observed "Bottled by Old Tom Distillery — Bardstown, Kentucky"
    - "mismatch": the label text disagrees with the expected value in a way a human reviewer would call wrong (different brand, different ABV number, wrong volume, etc.).
-   - "missing": the label does not contain a value for that field, or the field is unreadable in the image.
+   - "missing": the label does not contain a value for that field, or the field is unreadable in any of the submitted images.
 
-4. IMPERFECT IMAGES. The label may be photographed at an angle, in poor lighting, or with glare. Make your best effort to read it. If a field is truly unreadable, set verdict to "missing" and explain in the note. Always populate "imageQuality": set "readable" to false only if the image is unusable overall, and list every quality problem you notice in "issues" (choose from "angle", "glare", "low_light", "blurry", "low_resolution", or a short free-text description) even if you were still able to read most fields despite it — this lets a human reviewer decide whether to ask for a rescan rather than treating a quality problem as a silent rejection.
+4. MULTIPLE LABEL IMAGES. A single product's required disclosures are often split across more than one physical label (front/brand label, back/strip label, neck label) — the government warning in particular is frequently on the back label, not the front. You may receive more than one image of the same product. Treat them as one combined label: check EVERY image for each field and for the government warning before concluding something is "missing" — a field only counts as missing if it does not appear on ANY of the submitted images. When you find a field's value (or the warning), set "sourceImage" to the 1-based index of the image it came from, in the order the images were provided; set it to null only if the value was not found on any image.
 
-5. BEVERAGE-CLASS-AWARE EVALUATION. The applicant's claim includes a "beverageType" (spirits, wine, or beer). Alcohol-content disclosure rules differ by class:
+5. IMPERFECT IMAGES. Any of the images may be photographed at an angle, in poor lighting, or with glare. Make your best effort to read each one. If a field is truly unreadable, set verdict to "missing" and explain in the note. Always populate "imageQuality": set "readable" to false only if the images are unusable overall, and list every quality problem you notice in "issues" (choose from "angle", "glare", "low_light", "blurry", "low_resolution", or a short free-text description — mention which image number if only one of several has the problem) even if you were still able to read most fields despite it — this lets a human reviewer decide whether to ask for a rescan rather than treating a quality problem as a silent rejection.
+
+6. BEVERAGE-CLASS-AWARE EVALUATION. The applicant's claim includes a "beverageType" (spirits, wine, or beer). Alcohol-content disclosure rules differ by class:
 ${(Object.keys(BEVERAGE_RULES) as (keyof typeof BEVERAGE_RULES)[])
   .map((k) => `   - ${k} (${BEVERAGE_RULES[k].citation}): ${BEVERAGE_RULES[k].abvGuidance}`)
   .join("\n")}
    Apply the guidance for the claimed beverageType when judging the alcohol-content field. If beverageType is absent, apply spirits-level strictness (numeric ABV expected). This does not change how any other field (brand, class/type, net contents, producer, country of origin, warning) is evaluated.
 
-6. OVERALL VERDICT. Aggregate with these rules:
+7. OVERALL VERDICT. Aggregate with these rules:
    - "approve": every claimed field is exact_match AND the warning is present AND its text exactly matches AND its header is all caps.
    - "needs_review": no mismatches and no missing required fields, BUT at least one of: a field is semantic_match, the warning header is not in all caps despite the text being correct, or you flagged a notable observation in "notes".
    - "reject": any field has verdict "mismatch" OR any required claimed field has verdict "missing" OR the warning is absent OR the warning text does not match exactly.
@@ -63,13 +65,17 @@ ${(Object.keys(BEVERAGE_RULES) as (keyof typeof BEVERAGE_RULES)[])
 
 You must return a single JSON object that matches the schema you are provided. Do not include explanatory prose outside the JSON.`;
 
-export function buildUserPrompt(claim: LabelClaim): string {
+export function buildUserPrompt(claim: LabelClaim, imageCount: number): string {
   const claimJson = JSON.stringify(claim, null, 2);
   const beverageType = claim.beverageType ?? "spirits";
   const rule = BEVERAGE_RULES[beverageType];
   const beverageNote = rule
     ? `The claimed beverage type is "${beverageType}" (${rule.citation}). ${rule.abvGuidance}`
     : `No beverage type was claimed — apply spirits-level strictness to the alcohol-content field.`;
+  const imageNote =
+    imageCount > 1
+      ? `The applicant submitted ${imageCount} images of this product's label(s) (e.g. front, back, neck) — they are provided below in order and labeled "Image 1", "Image 2", etc. Treat them as one combined label per rule 4: check every image for each field before marking anything missing, and report which image each value came from.`
+      : `The applicant submitted a single label image, provided below.`;
   return `The applicant's COLA claim is:
 
 \`\`\`json
@@ -78,7 +84,9 @@ ${claimJson}
 
 ${beverageNote}
 
-Review the attached label image against this claim and return the structured verification JSON.`;
+${imageNote}
+
+Review the attached label image(s) against this claim and return the structured verification JSON.`;
 }
 
 // JSON Schema shared by both providers for structured output.
@@ -93,7 +101,7 @@ export const VERIFICATION_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["field", "expected", "observed", "verdict", "note"],
+        required: ["field", "expected", "observed", "verdict", "note", "sourceImage"],
         properties: {
           field: { type: "string" },
           expected: { type: "string" },
@@ -103,6 +111,7 @@ export const VERIFICATION_JSON_SCHEMA = {
             enum: ["exact_match", "semantic_match", "mismatch", "missing"],
           },
           note: { type: "string" },
+          sourceImage: { type: ["integer", "null"] },
         },
       },
     },
@@ -116,6 +125,7 @@ export const VERIFICATION_JSON_SCHEMA = {
         "observedHeader",
         "observedText",
         "issues",
+        "sourceImage",
       ],
       properties: {
         present: { type: "boolean" },
@@ -124,6 +134,7 @@ export const VERIFICATION_JSON_SCHEMA = {
         observedHeader: { type: ["string", "null"] },
         observedText: { type: ["string", "null"] },
         issues: { type: "array", items: { type: "string" } },
+        sourceImage: { type: ["integer", "null"] },
       },
     },
     imageQuality: {
@@ -147,6 +158,7 @@ export type ModelResponse = {
     observed: string | null;
     verdict: "exact_match" | "semantic_match" | "mismatch" | "missing";
     note: string;
+    sourceImage?: number | null;
   }[];
   governmentWarning: {
     present: boolean;
@@ -155,6 +167,7 @@ export type ModelResponse = {
     observedHeader: string | null;
     observedText: string | null;
     issues: string[];
+    sourceImage?: number | null;
   };
   // Optional in the TS type (though required in the JSON schema sent to the
   // model) so existing fixtures/tests that predate this field still type-check.

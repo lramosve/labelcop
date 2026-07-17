@@ -9,6 +9,8 @@ export interface FieldResult {
   observed: string | null;
   verdict: MatchVerdict;
   note?: string;
+  /** 1-based index into the submitted images this value was read from, or null if not found on any. */
+  sourceImage?: number | null;
 }
 
 export interface GovernmentWarningResult {
@@ -18,6 +20,8 @@ export interface GovernmentWarningResult {
   observedHeader: string | null;
   observedText: string | null;
   issues: string[];
+  /** 1-based index into the submitted images the warning was read from, or null if not found on any. */
+  sourceImage?: number | null;
 }
 
 export interface ImageQualityResult {
@@ -38,9 +42,14 @@ export interface VerificationResult {
   model: string;
 }
 
-export interface VerifyInput {
+export interface LabelImage {
   imageBase64: string;
   mimeType: string;
+}
+
+export interface VerifyInput {
+  /** One or more images of the same physical label set (e.g. front, back, neck). */
+  images: LabelImage[];
   claim: LabelClaim;
 }
 

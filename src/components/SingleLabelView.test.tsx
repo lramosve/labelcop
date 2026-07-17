@@ -30,10 +30,50 @@ describe("SingleLabelView", () => {
     await user.type(screen.getByLabelText(/brand name/i), "OLD TOM DISTILLERY");
     expect(verifyButton).toBeDisabled(); // still no image
 
-    const dropzone = screen.getByRole("button", { name: /upload a label image/i });
+    const dropzone = screen.getByRole("button", { name: /upload label images/i });
     fireEvent.drop(dropzone, { dataTransfer: { files: [makeImageFile()] } });
 
     await waitFor(() => expect(verifyButton).toBeEnabled());
+  });
+
+  it("submits every attached image (front + back label) in the verify request", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      jsonResponse({
+        overall: "approve",
+        fields: [],
+        governmentWarning: {
+          present: true,
+          exactTextMatch: true,
+          headerAllCaps: true,
+          observedHeader: "GOVERNMENT WARNING:",
+          observedText: GOVERNMENT_WARNING_EXACT_TEXT,
+          issues: [],
+        },
+        imageQuality: { readable: true, issues: [] },
+        notes: [],
+        latencyMs: 2100,
+        provider: "openai",
+        model: "gpt-5.4-mini",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SingleLabelView />);
+    await user.type(screen.getByLabelText(/brand name/i), "OLD TOM DISTILLERY");
+    const dropzone = screen.getByRole("button", { name: /upload label images/i });
+    fireEvent.drop(dropzone, {
+      dataTransfer: { files: [makeImageFile("front.png"), makeImageFile("back.png")] },
+    });
+    expect(screen.getByText(/front\.png/)).toBeInTheDocument();
+    expect(screen.getByText(/back\.png/)).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /verify label/i })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: /verify label/i }));
+    await screen.findByText("Approve");
+
+    const [, requestInit] = fetchMock.mock.calls[0];
+    const submittedImages = (requestInit!.body as FormData).getAll("image") as File[];
+    expect(submittedImages.map((f) => f.name)).toEqual(["front.png", "back.png"]);
   });
 
   it("includes a beverage-type selector defaulting to Distilled Spirits", () => {
@@ -59,7 +99,7 @@ describe("SingleLabelView", () => {
     );
     render(<SingleLabelView />);
     await user.type(screen.getByLabelText(/brand name/i), "OLD TOM DISTILLERY");
-    fireEvent.drop(screen.getByRole("button", { name: /upload a label image/i }), {
+    fireEvent.drop(screen.getByRole("button", { name: /upload label images/i }), {
       dataTransfer: { files: [makeImageFile()] },
     });
     await waitFor(() => expect(screen.getByRole("button", { name: /verify label/i })).toBeEnabled());
@@ -94,7 +134,7 @@ describe("SingleLabelView", () => {
     );
     render(<SingleLabelView />);
     await user.type(screen.getByLabelText(/brand name/i), "OLD TOM DISTILLERY");
-    fireEvent.drop(screen.getByRole("button", { name: /upload a label image/i }), {
+    fireEvent.drop(screen.getByRole("button", { name: /upload label images/i }), {
       dataTransfer: { files: [makeImageFile()] },
     });
     await waitFor(() => expect(screen.getByRole("button", { name: /verify label/i })).toBeEnabled());

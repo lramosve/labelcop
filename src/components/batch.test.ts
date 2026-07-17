@@ -4,6 +4,8 @@ import {
   csvRecordToBatchRow,
   imageKey,
   markMissingImages,
+  missingFilenamesForRow,
+  parseImageFilenames,
   rowsWithoutImage,
   type BatchRow,
 } from "./batch";
@@ -48,7 +50,7 @@ function fakeResult(overrides: Partial<VerificationResult> = {}): VerificationRe
 describe("csvRecordToBatchRow", () => {
   it("trims whitespace from every field and normalizes the beverage type", () => {
     const row = csvRecordToBatchRow(SAMPLE_RECORD, 0);
-    expect(row.imageFilename).toBe("old_tom_750ml.png");
+    expect(row.imageFilenames).toEqual(["old_tom_750ml.png"]);
     expect(row.claim.brandName).toBe("OLD TOM DISTILLERY");
     expect(row.claim.beverageType).toBe("spirits");
   });
@@ -81,6 +83,33 @@ describe("csvRecordToBatchRow", () => {
     expect(row.claim.classType).toBe("");
     expect(row.claim.beverageType).toBeUndefined();
   });
+
+  it("splits a semicolon-delimited imageFilename cell into multiple filenames (front/back label)", () => {
+    const row = csvRecordToBatchRow(
+      { imageFilename: " front.png ; back.png ", brandName: "Acme" },
+      0,
+    );
+    expect(row.imageFilenames).toEqual(["front.png", "back.png"]);
+  });
+});
+
+describe("parseImageFilenames", () => {
+  it("returns a single-element array for a plain filename (backward compatible)", () => {
+    expect(parseImageFilenames("label.png")).toEqual(["label.png"]);
+  });
+
+  it("splits on semicolons and trims each entry", () => {
+    expect(parseImageFilenames(" front.png ;back.png; neck.png ")).toEqual([
+      "front.png",
+      "back.png",
+      "neck.png",
+    ]);
+  });
+
+  it("drops empty segments (trailing delimiter, blank cell)", () => {
+    expect(parseImageFilenames("front.png;")).toEqual(["front.png"]);
+    expect(parseImageFilenames("")).toEqual([]);
+  });
 });
 
 describe("imageKey / matching", () => {
@@ -88,20 +117,36 @@ describe("imageKey / matching", () => {
     csvRecordToBatchRow({ imageFilename: "Old_Tom.png", brandName: "A" }, 0),
     csvRecordToBatchRow({ imageFilename: "STONES_THROW.PNG", brandName: "B" }, 1),
     csvRecordToBatchRow({ imageFilename: "missing.png", brandName: "C" }, 2),
+    csvRecordToBatchRow({ imageFilename: "front.png;back.png", brandName: "D" }, 3),
   ];
 
   it("matches uploaded image filenames case-insensitively", () => {
-    const uploaded = ["old_tom.png", "stones_throw.png"];
+    const uploaded = ["old_tom.png", "stones_throw.png", "front.png", "back.png"];
     const missing = rowsWithoutImage(rows, uploaded);
     expect(missing).toHaveLength(1);
-    expect(missing[0].imageFilename).toBe("missing.png");
+    expect(missing[0].imageFilenames).toEqual(["missing.png"]);
+  });
+
+  it("treats a row as unmatched if only some of its images are uploaded", () => {
+    const uploaded = ["old_tom.png", "stones_throw.png", "front.png"]; // back.png missing
+    const missing = rowsWithoutImage(rows, uploaded);
+    const rowNames = missing.map((r) => r.imageFilenames.join(","));
+    expect(rowNames).toContain("missing.png");
+    expect(rowNames).toContain("front.png,back.png");
+  });
+
+  it("missingFilenamesForRow reports exactly the unmatched filenames within a row", () => {
+    const row = rows[3]; // front.png;back.png
+    expect(missingFilenamesForRow(row, ["front.png"])).toEqual(["back.png"]);
+    expect(missingFilenamesForRow(row, ["front.png", "back.png"])).toEqual([]);
   });
 
   it("marks unmatched rows with status 'missing_image' without touching matched ones", () => {
-    const marked = markMissingImages(rows, ["old_tom.png", "stones_throw.png"]);
+    const marked = markMissingImages(rows, ["old_tom.png", "stones_throw.png", "front.png", "back.png"]);
     expect(marked[0].status).toBe("queued");
     expect(marked[1].status).toBe("queued");
     expect(marked[2].status).toBe("missing_image");
+    expect(marked[3].status).toBe("queued");
   });
 
   it("imageKey is the lowercase form used everywhere for matching", () => {
@@ -159,5 +204,15 @@ describe("buildResultsCsvRecords", () => {
     // Row 2: errored — the error text is preserved for CSV consumers.
     expect(records[2].status).toBe("error");
     expect(records[2].error).toBe("network timeout");
+  });
+
+  it("joins multiple image filenames with '; ' in the exported CSV cell", () => {
+    const row: BatchRow = {
+      ...csvRecordToBatchRow({ imageFilename: "front.png;back.png", brandName: "Multi" }, 0),
+      status: "done",
+      result: fakeResult(),
+    };
+    const [record] = buildResultsCsvRecords([row]);
+    expect(record.imageFilename).toBe("front.png; back.png");
   });
 });

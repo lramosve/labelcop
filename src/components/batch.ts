@@ -9,7 +9,8 @@ export type BatchStatus = "queued" | "running" | "done" | "error" | "missing_ima
 
 export interface BatchRow {
   rowIndex: number;
-  imageFilename: string;
+  /** One or more filenames (front/back/neck) for this label. */
+  imageFilenames: string[];
   claim: LabelClaim;
   status: BatchStatus;
   result?: VerificationResult;
@@ -27,6 +28,11 @@ export const TEMPLATE_HEADERS = [
   "beverageType",
 ] as const;
 
+// A row's imageFilename cell may list more than one file (e.g. front + back
+// label) separated by this delimiter — a single filename with no delimiter
+// still works exactly as before.
+export const IMAGE_FILENAME_DELIMITER = ";";
+
 export const TEMPLATE_ROWS: string[][] = [
   [
     "01-perfect-label.png",
@@ -37,6 +43,16 @@ export const TEMPLATE_ROWS: string[][] = [
     "Old Tom Distillery, Bardstown, KY",
     "",
     "spirits",
+  ],
+  [
+    "front-label.png;back-label.png",
+    "SONOMA RIDGE CELLARS",
+    "Cabernet Sauvignon",
+    "Table Wine",
+    "750 mL",
+    "Sonoma Ridge Cellars, Sonoma, CA",
+    "",
+    "wine",
   ],
 ];
 
@@ -64,6 +80,14 @@ export function imageKey(filename: string): string {
   return filename.toLowerCase();
 }
 
+/** Split a raw imageFilename CSV cell into its component filenames. */
+export function parseImageFilenames(raw: string): string[] {
+  return raw
+    .split(IMAGE_FILENAME_DELIMITER)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 /**
  * Convert a single parsed CSV record (header → cell) into a BatchRow.
  * Trims whitespace, normalizes empty country-of-origin to undefined, and
@@ -76,7 +100,7 @@ export function csvRecordToBatchRow(
   const beverageRaw = (record.beverageType ?? "").trim().toLowerCase();
   return {
     rowIndex,
-    imageFilename: (record.imageFilename ?? "").trim(),
+    imageFilenames: parseImageFilenames(record.imageFilename ?? ""),
     claim: {
       brandName: (record.brandName ?? "").trim(),
       classType: (record.classType ?? "").trim(),
@@ -90,21 +114,26 @@ export function csvRecordToBatchRow(
   };
 }
 
-/** Returns the rows whose imageFilename does not match any uploaded image. */
-export function rowsWithoutImage(rows: BatchRow[], availableImageKeys: Iterable<string>): BatchRow[] {
+/** Returns the filenames within a row that have no matching uploaded image. */
+export function missingFilenamesForRow(row: BatchRow, availableImageKeys: Iterable<string>): string[] {
   const have = new Set<string>();
   for (const k of availableImageKeys) have.add(imageKey(k));
-  return rows.filter((r) => !have.has(imageKey(r.imageFilename)));
+  return row.imageFilenames.filter((f) => !have.has(imageKey(f)));
 }
 
-/** Mark rows that have no matching image with status "missing_image". */
+/** Returns the rows where at least one listed image filename has no match. */
+export function rowsWithoutImage(rows: BatchRow[], availableImageKeys: Iterable<string>): BatchRow[] {
+  return rows.filter((r) => missingFilenamesForRow(r, availableImageKeys).length > 0);
+}
+
+/** Mark rows with any unmatched image filename as status "missing_image". */
 export function markMissingImages(
   rows: BatchRow[],
   availableImageKeys: Iterable<string>,
 ): BatchRow[] {
-  const have = new Set<string>();
-  for (const k of availableImageKeys) have.add(imageKey(k));
-  return rows.map((r) => (have.has(imageKey(r.imageFilename)) ? r : { ...r, status: "missing_image" }));
+  return rows.map((r) =>
+    missingFilenamesForRow(r, availableImageKeys).length > 0 ? { ...r, status: "missing_image" } : r,
+  );
 }
 
 export interface ResultsCsvRecord {
@@ -131,7 +160,7 @@ export interface ResultsCsvRecord {
  */
 export function buildResultsCsvRecords(rows: BatchRow[]): ResultsCsvRecord[] {
   return rows.map((r) => ({
-    imageFilename: r.imageFilename,
+    imageFilename: r.imageFilenames.join(IMAGE_FILENAME_DELIMITER + " "),
     brandName: r.claim.brandName,
     status: r.status,
     overall: r.result?.overall ?? "",

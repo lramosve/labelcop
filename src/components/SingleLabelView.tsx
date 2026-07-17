@@ -21,25 +21,25 @@ const EMPTY_CLAIM: LabelClaim = {
 
 export function SingleLabelView() {
   const [claim, setClaim] = useState<LabelClaim>(EMPTY_CLAIM);
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
+    if (files.length === 0) {
+      setPreviewUrls([]);
       return;
     }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setPreviewUrls(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [files]);
 
   const canVerify = useMemo(
-    () => !!file && !!claim.brandName.trim() && !pending,
-    [file, claim.brandName, pending],
+    () => files.length > 0 && !!claim.brandName.trim() && !pending,
+    [files, claim.brandName, pending],
   );
 
   function update<K extends keyof LabelClaim>(key: K, value: LabelClaim[K]) {
@@ -52,18 +52,18 @@ export function SingleLabelView() {
 
   function reset() {
     setClaim(EMPTY_CLAIM);
-    setFile(null);
+    setFiles([]);
     setResult(null);
     setError(null);
   }
 
   async function onVerify() {
-    if (!file) return;
+    if (files.length === 0) return;
     setPending(true);
     setError(null);
     setResult(null);
     try {
-      const data = await verifyLabel(file, claim);
+      const data = await verifyLabel(files, claim);
       setResult(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -146,7 +146,7 @@ export function SingleLabelView() {
           placeholder="Product of Scotland"
         />
 
-        <UploadZone file={file} previewUrl={previewUrl} onChange={setFile} />
+        <UploadZone files={files} previewUrls={previewUrls} onChange={setFiles} />
 
         <div className="flex items-center gap-3 pt-2">
           <button
@@ -236,7 +236,7 @@ function EmptyState() {
         <div className="text-4xl mb-2">🔍</div>
         <div className="font-medium text-slate-700">Ready to verify</div>
         <div className="text-sm mt-1 max-w-xs mx-auto">
-          Enter the claim from the COLA application, drop in the label image, and click{" "}
+          Enter the claim from the COLA application, drop in the label image(s), and click{" "}
           <span className="font-medium text-slate-700">Verify Label</span>.
         </div>
       </div>

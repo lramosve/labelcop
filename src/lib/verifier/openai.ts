@@ -24,8 +24,15 @@ export function createOpenAIVerifier(): LabelVerifier {
   return {
     provider: "openai",
     model,
-    async verify({ imageBase64, mimeType, claim }: VerifyInput): Promise<VerificationResult> {
+    async verify({ images, claim }: VerifyInput): Promise<VerificationResult> {
       const started = Date.now();
+      const imageContent = images.flatMap((img, i) => [
+        { type: "text" as const, text: `Image ${i + 1}:` },
+        {
+          type: "image_url" as const,
+          image_url: { url: `data:${img.mimeType};base64,${img.imageBase64}` },
+        },
+      ]);
       const response = await client.chat.completions.create({
         model,
         response_format: {
@@ -42,11 +49,8 @@ export function createOpenAIVerifier(): LabelVerifier {
           {
             role: "user",
             content: [
-              { type: "text", text: buildUserPrompt(claim) },
-              {
-                type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-              },
+              { type: "text", text: buildUserPrompt(claim, images.length) },
+              ...imageContent,
             ],
           },
         ],

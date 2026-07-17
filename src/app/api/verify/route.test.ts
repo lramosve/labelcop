@@ -31,13 +31,14 @@ const VALID_CLAIM = {
   beverageType: "spirits",
 };
 
-function makeImageFile(sizeBytes = 1024, type = "image/png") {
-  return new File([new Uint8Array(sizeBytes)], "label.png", { type });
+function makeImageFile(sizeBytes = 1024, type = "image/png", name = "label.png") {
+  return new File([new Uint8Array(sizeBytes)], name, { type });
 }
 
-function makeRequest(fields: { image?: File; claim?: string }) {
+function makeRequest(fields: { image?: File; images?: File[]; claim?: string }) {
   const formData = new FormData();
-  if (fields.image !== undefined) formData.append("image", fields.image);
+  const images = fields.images ?? (fields.image ? [fields.image] : []);
+  for (const image of images) formData.append("image", image);
   if (fields.claim !== undefined) formData.append("claim", fields.claim);
   return new NextRequest("http://localhost/api/verify", { method: "POST", body: formData });
 }
@@ -120,7 +121,48 @@ describe("POST /api/verify", () => {
     expect(verifyMock).toHaveBeenCalledTimes(1);
     const callArg = verifyMock.mock.calls[0][0];
     expect(callArg.claim).toEqual(VALID_CLAIM);
-    expect(callArg.mimeType).toBe("image/png");
+    expect(callArg.images).toHaveLength(1);
+    expect(callArg.images[0].mimeType).toBe("image/png");
+  });
+
+  it("accepts multiple images (front + back label) and forwards all of them to the verifier", async () => {
+    verifyMock.mockResolvedValue({
+      overall: "approve",
+      fields: [],
+      governmentWarning: {
+        present: true,
+        exactTextMatch: true,
+        headerAllCaps: true,
+        observedHeader: "GOVERNMENT WARNING:",
+        observedText: "...",
+        issues: [],
+      },
+      imageQuality: { readable: true, issues: [] },
+      notes: [],
+      latencyMs: 2100,
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    const front = makeImageFile(1024, "image/png", "front.png");
+    const back = makeImageFile(1024, "image/jpeg", "back.jpg");
+    const res = await POST(
+      makeRequest({ images: [front, back], claim: JSON.stringify(VALID_CLAIM) }),
+    );
+    expect(res.status).toBe(200);
+    expect(verifyMock).toHaveBeenCalledTimes(1);
+    const callArg = verifyMock.mock.calls[0][0];
+    expect(callArg.images).toHaveLength(2);
+    expect(callArg.images[0].mimeType).toBe("image/png");
+    expect(callArg.images[1].mimeType).toBe("image/jpeg");
+  });
+
+  it("400s when more than the max number of images per label is submitted", async () => {
+    const images = Array.from({ length: 5 }, (_, i) => makeImageFile(1024, "image/png", `img${i}.png`));
+    const res = await POST(makeRequest({ images, claim: JSON.stringify(VALID_CLAIM) }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/too many images/i);
+    expect(verifyMock).not.toHaveBeenCalled();
   });
 
   it("returns a 504 with a network-realities message when the verifier hangs past the timeout", async () => {

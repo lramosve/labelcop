@@ -6,7 +6,13 @@
 
 import type { LabelClaim } from "./ttb";
 import type { VerificationResult } from "./types";
-import { MAX_IMAGE_BYTES, NETWORK_UNREACHABLE_MESSAGE, VERIFY_TIMEOUT_MS, formatBytes } from "./limits";
+import {
+  MAX_IMAGE_BYTES,
+  MAX_IMAGES_PER_LABEL,
+  NETWORK_UNREACHABLE_MESSAGE,
+  VERIFY_TIMEOUT_MS,
+  formatBytes,
+} from "./limits";
 
 export function validateImageFile(file: File): string | null {
   if (file.size > MAX_IMAGE_BYTES) {
@@ -15,15 +21,21 @@ export function validateImageFile(file: File): string | null {
   return null;
 }
 
-export async function verifyLabel(image: File, claim: LabelClaim): Promise<VerificationResult> {
-  const sizeError = validateImageFile(image);
-  if (sizeError) throw new Error(sizeError);
+export async function verifyLabel(images: File[], claim: LabelClaim): Promise<VerificationResult> {
+  if (images.length === 0) throw new Error("At least one label image is required.");
+  if (images.length > MAX_IMAGES_PER_LABEL) {
+    throw new Error(`Attach at most ${MAX_IMAGES_PER_LABEL} images per label.`);
+  }
+  for (const image of images) {
+    const sizeError = validateImageFile(image);
+    if (sizeError) throw new Error(sizeError);
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
   try {
     const fd = new FormData();
-    fd.append("image", image);
+    for (const image of images) fd.append("image", image);
     fd.append("claim", JSON.stringify(claim));
     const r = await fetch("/api/verify", { method: "POST", body: fd, signal: controller.signal });
     const data = await r.json();

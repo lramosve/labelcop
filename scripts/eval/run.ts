@@ -62,6 +62,8 @@ interface EvalCase {
   degradedMimeType?: string;
   /** Assert the model actually flags an image-quality issue (used with `degrade`). */
   expectQualityIssue?: boolean;
+  /** Additional label images (e.g. a back label) submitted alongside `label`. Never degraded. */
+  extraLabels?: LabelContent[];
 }
 
 const CASES: EvalCase[] = [
@@ -181,6 +183,25 @@ const CASES: EvalCase[] = [
     degradedMimeType: "image/jpeg",
     expectQualityIssue: true,
   },
+  {
+    name: "warning_on_back_label",
+    description:
+      "Front label has no warning at all; a second (back label) image carries it — multi-image support must find it there instead of falsely rejecting for a missing warning.",
+    label: { ...PERFECT_LABEL, warningHeader: null, warningBody: null },
+    extraLabels: [
+      {
+        brandName: "",
+        classType: "",
+        alcoholContent: "",
+        netContents: "",
+        producer: "",
+        warningHeader: CANONICAL_WARNING_HEADER,
+        warningBody: CANONICAL_WARNING_BODY,
+      },
+    ],
+    claim: PERFECT_CLAIM,
+    expected: "approve",
+  },
 ];
 
 const CONCURRENCY = 3;
@@ -212,19 +233,24 @@ async function runCase(c: EvalCase): Promise<Outcome> {
     png = await c.degrade(png);
     mimeType = c.degradedMimeType ?? "image/png";
   }
+  const images = [{ imageBase64: png.toString("base64"), mimeType }];
   if (saveImages) {
     const outDir = join(__dirname, "out");
     await mkdir(outDir, { recursive: true });
     const ext = mimeType === "image/jpeg" ? "jpg" : "png";
     await writeFile(join(outDir, `${c.name}.${ext}`), png);
   }
+  for (const [i, extra] of (c.extraLabels ?? []).entries()) {
+    const extraPng = await renderLabel(extra);
+    images.push({ imageBase64: extraPng.toString("base64"), mimeType: "image/png" });
+    if (saveImages) {
+      const outDir = join(__dirname, "out");
+      await writeFile(join(outDir, `${c.name}.extra${i + 1}.png`), extraPng);
+    }
+  }
   const verifier = getVerifier();
   const t0 = Date.now();
-  const result = await verifier.verify({
-    imageBase64: png.toString("base64"),
-    mimeType,
-    claim: c.claim,
-  });
+  const result = await verifier.verify({ images, claim: c.claim });
   const ms = Date.now() - t0;
   const acceptable = new Set<OverallVerdict>([c.expected, ...(c.also ?? [])]);
   const imageQuality = result.imageQuality ?? { readable: true, issues: [] };

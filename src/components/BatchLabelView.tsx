@@ -14,6 +14,7 @@ import {
   csvRecordToBatchRow,
   imageKey,
   markMissingImages,
+  missingFilenamesForRow,
   rowsWithoutImage,
   type BatchRow,
 } from "./batch";
@@ -40,7 +41,9 @@ export function BatchLabelView() {
     return counts;
   }, [rows]);
 
-  const matchedCount = rows.filter((r) => imageFiles[imageKey(r.imageFilename)]).length;
+  const matchedCount = rows.filter(
+    (r) => missingFilenamesForRow(r, Object.keys(imageFiles)).length === 0,
+  ).length;
   const canRun = rows.length > 0 && matchedCount === rows.length && !running;
 
   function onCsvSelected(file: File) {
@@ -83,7 +86,7 @@ export function BatchLabelView() {
       for (const f of files) nextImages[imageKey(f.name)] = f;
       const nextRows: BatchRow[] = SAMPLE_BATCH_IMAGES.map((name, i) => ({
         rowIndex: i,
-        imageFilename: name,
+        imageFilenames: [name],
         claim: { ...SAMPLE_BATCH_BASE_CLAIM },
         status: "queued",
       }));
@@ -118,7 +121,7 @@ export function BatchLabelView() {
     setRows((prev) => markMissingImages(prev, Object.keys(imageFiles)));
 
     const workQueue = rows
-      .filter((r) => imageFiles[imageKey(r.imageFilename)])
+      .filter((r) => missingFilenamesForRow(r, Object.keys(imageFiles)).length === 0)
       .map((r) => r.rowIndex);
 
     // Tracked locally (not via rowsRef, which mirrors React state through a
@@ -138,11 +141,11 @@ export function BatchLabelView() {
     async function processOne(idx: number) {
       const row = rowsRef.current[idx];
       if (!row) return;
-      const image = imageFiles[imageKey(row.imageFilename)];
-      if (!image) return;
+      const images = row.imageFilenames.map((f) => imageFiles[imageKey(f)]).filter(Boolean) as File[];
+      if (images.length !== row.imageFilenames.length) return;
       updateRow(idx, { status: "running" });
       try {
-        const data = await verifyLabel(image, row.claim);
+        const data = await verifyLabel(images, row.claim);
         updateRow(idx, { status: "done", result: data });
         finalRows.set(idx, { ...row, status: "done", result: data });
       } catch (e) {
@@ -221,7 +224,7 @@ export function BatchLabelView() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <UploadBox
             title="1. Application CSV"
-            description="One row per label. Headers: imageFilename, brandName, classType, alcoholContent, netContents, producer, countryOfOrigin, beverageType."
+            description="One row per label. Headers: imageFilename, brandName, classType, alcoholContent, netContents, producer, countryOfOrigin, beverageType. imageFilename may list more than one file (e.g. front + back label) separated by a semicolon."
             value={csvName ? `${csvName} — ${rows.length} rows` : null}
             accept=".csv,text/csv"
             inputRef={csvInputRef}
@@ -229,7 +232,7 @@ export function BatchLabelView() {
           />
           <UploadBox
             title="2. Label Images"
-            description="Select all images at once. Filenames must match the imageFilename column in the CSV."
+            description="Select all images at once. Filenames must match the imageFilename column in the CSV (a row can reference more than one file)."
             value={
               Object.keys(imageFiles).length
                 ? `${Object.keys(imageFiles).length} images loaded`
@@ -249,11 +252,14 @@ export function BatchLabelView() {
             </span>
             {matchedCount < rows.length && (
               <span className="text-amber-700">
-                — missing: {rowsWithoutImage(rows, Object.keys(imageFiles))
-                  .map((r) => r.imageFilename)
+                — missing:{" "}
+                {rowsWithoutImage(rows, Object.keys(imageFiles))
+                  .flatMap((r) => missingFilenamesForRow(r, Object.keys(imageFiles)))
                   .slice(0, 3)
                   .join(", ")}
-                {rowsWithoutImage(rows, Object.keys(imageFiles)).length > 3 && "…"}
+                {rowsWithoutImage(rows, Object.keys(imageFiles)).flatMap((r) =>
+                  missingFilenamesForRow(r, Object.keys(imageFiles)),
+                ).length > 3 && "…"}
               </span>
             )}
           </div>
@@ -340,7 +346,9 @@ function FragmentRow({
   return (
     <>
       <tr>
-        <td className="px-4 py-2 font-mono text-xs text-slate-700">{row.imageFilename}</td>
+        <td className="px-4 py-2 font-mono text-xs text-slate-700">
+          {row.imageFilenames.join(", ")}
+        </td>
         <td className="px-4 py-2">{row.claim.brandName}</td>
         <td className="px-4 py-2">
           <StatusBadge status={row.status} />

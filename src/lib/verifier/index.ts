@@ -33,5 +33,7 @@ export type {
   FieldResult,
   GovernmentWarningResult,
   ImageQualityResult,
+  LabelImage,
+  VerifyInput,
 } from "./types";
 export type { LabelClaim, BeverageType } from "./ttb";

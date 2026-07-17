@@ -24,8 +24,19 @@ export function createAnthropicVerifier(): LabelVerifier {
   return {
     provider: "anthropic",
     model,
-    async verify({ imageBase64, mimeType, claim }: VerifyInput): Promise<VerificationResult> {
+    async verify({ images, claim }: VerifyInput): Promise<VerificationResult> {
       const started = Date.now();
+      const imageContent = images.flatMap((img, i) => [
+        { type: "text" as const, text: `Image ${i + 1}:` },
+        {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: img.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+            data: img.imageBase64,
+          },
+        },
+      ]);
       const response = await client.messages.create({
         model,
         max_tokens: 2048,
@@ -42,17 +53,7 @@ export function createAnthropicVerifier(): LabelVerifier {
         messages: [
           {
             role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
-                  data: imageBase64,
-                },
-              },
-              { type: "text", text: buildUserPrompt(claim) },
-            ],
+            content: [...imageContent, { type: "text", text: buildUserPrompt(claim, images.length) }],
           },
         ],
       });
