@@ -21,6 +21,7 @@ export function ResultPanel({ result }: { result: VerificationResult }) {
   return (
     <div className="space-y-5">
       <OverallBadge result={result} />
+      <ImageQualityBanner result={result} />
       <WarningPanel result={result} />
       <FieldsTable fields={result.fields} />
       {result.notes.length > 0 && (
@@ -76,6 +77,45 @@ export function OverallBadge({ result }: { result: VerificationResult }) {
         </div>
         <div>
           {result.provider} · {result.model}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const IMAGE_ISSUE_LABELS: Record<string, string> = {
+  angle: "photographed at an angle",
+  glare: "glare on the label",
+  low_light: "poor lighting",
+  blurry: "blurry / out of focus",
+  low_resolution: "low resolution",
+};
+
+function ImageQualityBanner({ result }: { result: VerificationResult }) {
+  const q = result.imageQuality;
+  if (!q || (q.readable && q.issues.length === 0)) return null;
+  const issueText = q.issues.map((i) => IMAGE_ISSUE_LABELS[i] ?? i).join(", ");
+  return (
+    <div
+      role="status"
+      className={
+        "rounded-lg border p-4 text-sm flex items-start gap-3 " +
+        (q.readable
+          ? "bg-amber-50 border-amber-200 text-amber-900"
+          : "bg-red-50 border-red-200 text-red-900")
+      }
+    >
+      <span className="font-bold text-lg leading-none" aria-hidden="true">
+        {q.readable ? "⚠" : "✕"}
+      </span>
+      <div>
+        <div className="font-medium">
+          {q.readable ? "This image may be hard to read" : "This image could not be reliably read"}
+        </div>
+        <div className="mt-0.5">
+          {issueText ? `Detected: ${issueText}. ` : ""}
+          Consider asking for a clearer rescan before treating any "missing" field below as a
+          genuine compliance gap.
         </div>
       </div>
     </div>

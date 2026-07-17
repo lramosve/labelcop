@@ -16,6 +16,8 @@ import { getVerifier } from "../../src/lib/verifier";
 import type { LabelClaim } from "../../src/lib/verifier";
 import type { OverallVerdict } from "../../src/lib/verifier/types";
 import { GOVERNMENT_WARNING_EXACT_TEXT } from "../../src/lib/verifier/ttb";
+import { TARGET_LATENCY_MS } from "../../src/lib/verifier/limits";
+import { photographedAtAngle, glareAndLowLight, blurryShot } from "./degrade";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +56,12 @@ interface EvalCase {
   expected: OverallVerdict;
   /** Accept a softer verdict as also passing. Used where reasonable agents could disagree. */
   also?: OverallVerdict[];
+  /** Simulates a real (non-pristine) photo capture: angle, glare, blur, etc. */
+  degrade?: (png: Buffer) => Promise<Buffer>;
+  /** When degraded, the resulting buffer is a JPEG, not a PNG. */
+  degradedMimeType?: string;
+  /** Assert the model actually flags an image-quality issue (used with `degrade`). */
+  expectQualityIssue?: boolean;
 }
 
 const CASES: EvalCase[] = [
@@ -112,6 +120,67 @@ const CASES: EvalCase[] = [
     claim: PERFECT_CLAIM,
     expected: "reject",
   },
+  {
+    name: "wine_class_statement_no_abv",
+    description:
+      'Wine claim states "Table Wine" instead of a numeric ABV — not mandatory for wine (27 CFR Part 4).',
+    label: { ...PERFECT_LABEL, alcoholContent: "Table Wine", classType: "Cabernet Sauvignon" },
+    claim: {
+      ...PERFECT_CLAIM,
+      alcoholContent: "Table Wine",
+      classType: "Cabernet Sauvignon",
+      beverageType: "wine",
+    },
+    expected: "approve",
+    also: ["needs_review"],
+  },
+  {
+    name: "beer_no_abv_statement",
+    description: "Malt beverage claim with no ABV statement on the label — often exempt federally (27 CFR Part 7).",
+    label: { ...PERFECT_LABEL, alcoholContent: "", classType: "India Pale Ale" },
+    claim: { ...PERFECT_CLAIM, alcoholContent: "", classType: "India Pale Ale", beverageType: "beer" },
+    expected: "approve",
+    also: ["needs_review"],
+  },
+  {
+    name: "spirits_missing_abv_still_rejects",
+    description: "Spirits claim with no ABV on the label — always mandatory, beverage exemption must not apply.",
+    label: { ...PERFECT_LABEL, alcoholContent: "" },
+    claim: { ...PERFECT_CLAIM, beverageType: "spirits" },
+    expected: "reject",
+  },
+  {
+    name: "photographed_at_angle",
+    description: "Label photographed at a slight angle with JPEG recompression (Jenny's imperfect-image ask).",
+    label: PERFECT_LABEL,
+    claim: PERFECT_CLAIM,
+    expected: "approve",
+    also: ["needs_review", "reject"],
+    degrade: photographedAtAngle,
+    degradedMimeType: "image/jpeg",
+  },
+  {
+    name: "glare_and_low_light",
+    description: "Label with simulated glare and poor lighting.",
+    label: PERFECT_LABEL,
+    claim: PERFECT_CLAIM,
+    expected: "approve",
+    also: ["needs_review", "reject"],
+    degrade: glareAndLowLight,
+    degradedMimeType: "image/jpeg",
+    expectQualityIssue: true,
+  },
+  {
+    name: "blurry_shot",
+    description: "Out-of-focus photo of an otherwise-compliant label.",
+    label: PERFECT_LABEL,
+    claim: PERFECT_CLAIM,
+    expected: "approve",
+    also: ["needs_review", "reject"],
+    degrade: blurryShot,
+    degradedMimeType: "image/jpeg",
+    expectQualityIssue: true,
+  },
 ];
 
 const CONCURRENCY = 3;
@@ -132,25 +201,35 @@ interface Outcome {
     observedHeader: string | null;
     observedText: string | null;
   };
+  imageQuality: { readable: boolean; issues: string[] };
+  qualityIssueExpectedButMissing: boolean;
 }
 
 async function runCase(c: EvalCase): Promise<Outcome> {
-  const png = await renderLabel(c.label);
+  let png = await renderLabel(c.label);
+  let mimeType = "image/png";
+  if (c.degrade) {
+    png = await c.degrade(png);
+    mimeType = c.degradedMimeType ?? "image/png";
+  }
   if (saveImages) {
     const outDir = join(__dirname, "out");
     await mkdir(outDir, { recursive: true });
-    await writeFile(join(outDir, `${c.name}.png`), png);
+    const ext = mimeType === "image/jpeg" ? "jpg" : "png";
+    await writeFile(join(outDir, `${c.name}.${ext}`), png);
   }
   const verifier = getVerifier();
   const t0 = Date.now();
   const result = await verifier.verify({
     imageBase64: png.toString("base64"),
-    mimeType: "image/png",
+    mimeType,
     claim: c.claim,
   });
   const ms = Date.now() - t0;
   const acceptable = new Set<OverallVerdict>([c.expected, ...(c.also ?? [])]);
-  const passed = acceptable.has(result.overall);
+  const imageQuality = result.imageQuality ?? { readable: true, issues: [] };
+  const qualityIssueExpectedButMissing = !!c.expectQualityIssue && imageQuality.issues.length === 0;
+  const passed = acceptable.has(result.overall) && !qualityIssueExpectedButMissing;
   return {
     name: c.name,
     expected: c.expected,
@@ -166,6 +245,8 @@ async function runCase(c: EvalCase): Promise<Outcome> {
       observedHeader: result.governmentWarning.observedHeader,
       observedText: result.governmentWarning.observedText,
     },
+    imageQuality,
+    qualityIssueExpectedButMissing,
   };
 }
 
@@ -201,6 +282,8 @@ async function main() {
             observedHeader: null,
             observedText: null,
           },
+          imageQuality: { readable: true, issues: [] },
+          qualityIssueExpectedButMissing: false,
         });
       }
     }
@@ -230,6 +313,14 @@ async function main() {
       console.log(
         `    observed text:   ${JSON.stringify(r.warning.observedText?.slice(0, 240) ?? null)}`,
       );
+      if (r.qualityIssueExpectedButMissing) {
+        console.log(
+          `    expected an image-quality issue to be flagged, but imageQuality.issues was empty`,
+        );
+      }
+      if (r.imageQuality.issues.length) {
+        console.log(`    image quality issues: ${r.imageQuality.issues.join(", ")}`);
+      }
       if (r.notes) console.log(`    notes: ${r.notes}`);
     }
   }
@@ -238,6 +329,22 @@ async function main() {
   console.log("─".repeat(72));
   const pct = ((passed / CASES.length) * 100).toFixed(1);
   console.log(`Total: ${passed}/${CASES.length} passed (${pct}%), wall clock ${elapsed}s`);
+
+  // Performance-guarantee check: Sarah Chen's stated 5-second-per-review
+  // budget. Printed as a summary rather than a hard CI failure, since this
+  // hits a live LLM and normal network jitter shouldn't flip exit codes —
+  // but it's now measured every run instead of a single anecdotal number.
+  const latencies = [...byName.values()].map((r) => r.ms).filter((ms) => ms > 0).sort((a, b) => a - b);
+  if (latencies.length) {
+    const p50 = latencies[Math.floor(latencies.length / 2)];
+    const max = latencies[latencies.length - 1];
+    const overBudget = latencies.filter((ms) => ms > TARGET_LATENCY_MS).length;
+    const budgetMark = overBudget === 0 ? "\x1b[32mwithin budget\x1b[0m" : `\x1b[33m${overBudget} case(s) over budget\x1b[0m`;
+    console.log(
+      `Latency: p50 ${(p50 / 1000).toFixed(1)}s, max ${(max / 1000).toFixed(1)}s ` +
+        `(target ${(TARGET_LATENCY_MS / 1000).toFixed(0)}s) — ${budgetMark}`,
+    );
+  }
 
   process.exit(passed === CASES.length ? 0 : 1);
 }

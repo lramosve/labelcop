@@ -27,5 +27,11 @@ export function resetVerifierForTest(): void {
   cached = null;
 }
 
-export type { LabelVerifier, VerificationResult, FieldResult, GovernmentWarningResult } from "./types";
+export type {
+  LabelVerifier,
+  VerificationResult,
+  FieldResult,
+  GovernmentWarningResult,
+  ImageQualityResult,
+} from "./types";
 export type { LabelClaim, BeverageType } from "./ttb";

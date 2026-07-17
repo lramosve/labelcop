@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { LabelClaim } from "@/lib/verifier";
 import type { VerificationResult } from "@/lib/verifier/types";
-import { EXAMPLE_CLAIM } from "@/lib/verifier/ttb";
+import { BEVERAGE_TYPE_LABELS, EXAMPLE_CLAIM } from "@/lib/verifier/ttb";
+import type { BeverageType } from "@/lib/verifier/ttb";
+import { verifyLabel } from "@/lib/verifier/client";
 import { UploadZone } from "./UploadZone";
 import { ResultPanel } from "./ResultPanel";
 
@@ -61,13 +63,8 @@ export function SingleLabelView() {
     setError(null);
     setResult(null);
     try {
-      const fd = new FormData();
-      fd.append("image", file);
-      fd.append("claim", JSON.stringify(claim));
-      const r = await fetch("/api/verify", { method: "POST", body: fd });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error ?? `Verification failed (HTTP ${r.status})`);
-      setResult(data as VerificationResult);
+      const data = await verifyLabel(file, claim);
+      setResult(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -102,6 +99,26 @@ export function SingleLabelView() {
           onChange={(v) => update("classType", v)}
           placeholder="e.g., Kentucky Straight Bourbon Whiskey"
         />
+        <label className="block">
+          <span className="block text-sm font-medium text-slate-700 mb-1">Beverage Type</span>
+          <select
+            value={claim.beverageType ?? "spirits"}
+            onChange={(e) => update("beverageType", e.target.value as BeverageType)}
+            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+          >
+            {(Object.keys(BEVERAGE_TYPE_LABELS) as BeverageType[]).map((bt) => (
+              <option key={bt} value={bt}>
+                {BEVERAGE_TYPE_LABELS[bt]}
+              </option>
+            ))}
+          </select>
+          <span className="block text-xs text-slate-500 mt-1">
+            Alcohol-content disclosure rules differ by class (e.g. wine and beer are not always
+            required to state a numeric ABV) — this affects how the alcohol content field below is
+            evaluated.
+          </span>
+        </label>
+
         <div className="grid grid-cols-2 gap-4">
           <Field
             label="Alcohol Content"
@@ -151,8 +168,11 @@ export function SingleLabelView() {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-slate-50 p-6">
+        <div aria-live="polite" className="sr-only">
+          {statusAnnouncement(pending, error, result)}
+        </div>
         {error && (
-          <div className="rounded border border-red-200 bg-red-50 text-red-800 p-4 text-sm">
+          <div role="alert" className="rounded border border-red-200 bg-red-50 text-red-800 p-4 text-sm">
             {error}
           </div>
         )}
@@ -162,6 +182,22 @@ export function SingleLabelView() {
       </section>
     </div>
   );
+}
+
+function statusAnnouncement(
+  pending: boolean,
+  error: string | null,
+  result: VerificationResult | null,
+): string {
+  if (pending) return "Reviewing the label…";
+  if (error) return `Error: ${error}`;
+  if (result) {
+    const label = { approve: "Approve", needs_review: "Needs Review", reject: "Reject" }[
+      result.overall
+    ];
+    return `Review complete: ${label}.`;
+  }
+  return "";
 }
 
 function Field({

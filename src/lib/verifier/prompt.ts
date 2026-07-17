@@ -1,4 +1,5 @@
 import {
+  BEVERAGE_RULES,
   GOVERNMENT_WARNING_EXACT_TEXT,
   GOVERNMENT_WARNING_HEADER,
   WARNING_FORMATTING_RULES,
@@ -46,9 +47,15 @@ ${WARNING_FORMATTING_RULES.map((r) => `   - ${r}`).join("\n")}
    - "mismatch": the label text disagrees with the expected value in a way a human reviewer would call wrong (different brand, different ABV number, wrong volume, etc.).
    - "missing": the label does not contain a value for that field, or the field is unreadable in the image.
 
-4. IMPERFECT IMAGES. The label may be photographed at an angle, in poor lighting, or with glare. Make your best effort to read it. If a field is truly unreadable, set verdict to "missing" and explain in the note.
+4. IMPERFECT IMAGES. The label may be photographed at an angle, in poor lighting, or with glare. Make your best effort to read it. If a field is truly unreadable, set verdict to "missing" and explain in the note. Always populate "imageQuality": set "readable" to false only if the image is unusable overall, and list every quality problem you notice in "issues" (choose from "angle", "glare", "low_light", "blurry", "low_resolution", or a short free-text description) even if you were still able to read most fields despite it — this lets a human reviewer decide whether to ask for a rescan rather than treating a quality problem as a silent rejection.
 
-5. OVERALL VERDICT. Aggregate with these rules:
+5. BEVERAGE-CLASS-AWARE EVALUATION. The applicant's claim includes a "beverageType" (spirits, wine, or beer). Alcohol-content disclosure rules differ by class:
+${(Object.keys(BEVERAGE_RULES) as (keyof typeof BEVERAGE_RULES)[])
+  .map((k) => `   - ${k} (${BEVERAGE_RULES[k].citation}): ${BEVERAGE_RULES[k].abvGuidance}`)
+  .join("\n")}
+   Apply the guidance for the claimed beverageType when judging the alcohol-content field. If beverageType is absent, apply spirits-level strictness (numeric ABV expected). This does not change how any other field (brand, class/type, net contents, producer, country of origin, warning) is evaluated.
+
+6. OVERALL VERDICT. Aggregate with these rules:
    - "approve": every claimed field is exact_match AND the warning is present AND its text exactly matches AND its header is all caps.
    - "needs_review": no mismatches and no missing required fields, BUT at least one of: a field is semantic_match, the warning header is not in all caps despite the text being correct, or you flagged a notable observation in "notes".
    - "reject": any field has verdict "mismatch" OR any required claimed field has verdict "missing" OR the warning is absent OR the warning text does not match exactly.
@@ -58,11 +65,18 @@ You must return a single JSON object that matches the schema you are provided. D
 
 export function buildUserPrompt(claim: LabelClaim): string {
   const claimJson = JSON.stringify(claim, null, 2);
+  const beverageType = claim.beverageType ?? "spirits";
+  const rule = BEVERAGE_RULES[beverageType];
+  const beverageNote = rule
+    ? `The claimed beverage type is "${beverageType}" (${rule.citation}). ${rule.abvGuidance}`
+    : `No beverage type was claimed — apply spirits-level strictness to the alcohol-content field.`;
   return `The applicant's COLA claim is:
 
 \`\`\`json
 ${claimJson}
 \`\`\`
+
+${beverageNote}
 
 Review the attached label image against this claim and return the structured verification JSON.`;
 }
@@ -71,7 +85,7 @@ Review the attached label image against this claim and return the structured ver
 export const VERIFICATION_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["overall", "fields", "governmentWarning", "notes"],
+  required: ["overall", "fields", "governmentWarning", "imageQuality", "notes"],
   properties: {
     overall: { type: "string", enum: ["approve", "needs_review", "reject"] },
     fields: {
@@ -112,6 +126,15 @@ export const VERIFICATION_JSON_SCHEMA = {
         issues: { type: "array", items: { type: "string" } },
       },
     },
+    imageQuality: {
+      type: "object",
+      additionalProperties: false,
+      required: ["readable", "issues"],
+      properties: {
+        readable: { type: "boolean" },
+        issues: { type: "array", items: { type: "string" } },
+      },
+    },
     notes: { type: "array", items: { type: "string" } },
   },
 } as const;
@@ -131,6 +154,12 @@ export type ModelResponse = {
     headerAllCaps: boolean;
     observedHeader: string | null;
     observedText: string | null;
+    issues: string[];
+  };
+  // Optional in the TS type (though required in the JSON schema sent to the
+  // model) so existing fixtures/tests that predate this field still type-check.
+  imageQuality?: {
+    readable: boolean;
     issues: string[];
   };
   notes: string[];

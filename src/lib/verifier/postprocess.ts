@@ -1,4 +1,9 @@
-import { GOVERNMENT_WARNING_EXACT_TEXT, GOVERNMENT_WARNING_HEADER, type LabelClaim } from "./ttb";
+import {
+  BEVERAGE_RULES,
+  GOVERNMENT_WARNING_EXACT_TEXT,
+  GOVERNMENT_WARNING_HEADER,
+  type LabelClaim,
+} from "./ttb";
 import type { ModelResponse } from "./prompt";
 import type { OverallVerdict, VerificationResult } from "./types";
 
@@ -106,6 +111,7 @@ export function finalizeResult(data: ModelResponse, ctx: FinalizeContext): Verif
     overall,
     fields: data.fields,
     governmentWarning: warning,
+    imageQuality: data.imageQuality ?? { readable: true, issues: [] },
     notes: data.notes,
     latencyMs: ctx.latencyMs,
     provider: ctx.provider,
@@ -119,9 +125,23 @@ function deriveOverall(
   headerAllCaps: boolean,
   claim: LabelClaim,
 ): OverallVerdict {
+  const beverageRule = BEVERAGE_RULES[claim.beverageType ?? "spirits"];
+
   const fields = data.fields.filter((f) => {
     // Skip country of origin if the applicant didn't claim one.
     if (f.field.toLowerCase().includes("country") && !claim.countryOfOrigin?.trim()) return false;
+    // Skip a "missing" alcohol-content field for beverage classes where a
+    // numeric ABV statement isn't mandatory (wine class statements, most
+    // malt beverages) — a genuine numeric mismatch still counts, this only
+    // excuses the field being absent from the label altogether.
+    if (
+      f.field.toLowerCase().includes("alcohol") &&
+      f.verdict === "missing" &&
+      beverageRule &&
+      !beverageRule.abvStatementMandatory
+    ) {
+      return false;
+    }
     return true;
   });
 

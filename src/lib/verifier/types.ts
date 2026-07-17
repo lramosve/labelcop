@@ -20,12 +20,18 @@ export interface GovernmentWarningResult {
   issues: string[];
 }
 
+export interface ImageQualityResult {
+  readable: boolean;
+  issues: string[];
+}
+
 export type OverallVerdict = "approve" | "needs_review" | "reject";
 
 export interface VerificationResult {
   overall: OverallVerdict;
   fields: FieldResult[];
   governmentWarning: GovernmentWarningResult;
+  imageQuality: ImageQualityResult;
   notes: string[];
   latencyMs: number;
   provider: "anthropic" | "openai";

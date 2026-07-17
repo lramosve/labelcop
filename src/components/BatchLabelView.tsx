@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 import type { OverallVerdict } from "@/lib/verifier/types";
+import { verifyLabel } from "@/lib/verifier/client";
 import { ResultPanel } from "./ResultPanel";
 import {
   SAMPLE_BATCH_BASE_CLAIM,
@@ -23,6 +24,7 @@ export function BatchLabelView() {
   const [csvName, setCsvName] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [announcement, setAnnouncement] = useState("");
   const csvInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const rowsRef = useRef<BatchRow[]>([]);
@@ -109,6 +111,7 @@ export function BatchLabelView() {
 
   async function runBatch() {
     setRunning(true);
+    setAnnouncement(`Reviewing ${rows.length} labels…`);
     const concurrency = 4;
 
     // Mark image-less rows up front.
@@ -133,12 +136,7 @@ export function BatchLabelView() {
       if (!image) return;
       updateRow(idx, { status: "running" });
       try {
-        const fd = new FormData();
-        fd.append("image", image);
-        fd.append("claim", JSON.stringify(row.claim));
-        const r = await fetch("/api/verify", { method: "POST", body: fd });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
+        const data = await verifyLabel(image, row.claim);
         updateRow(idx, { status: "done", result: data });
       } catch (e) {
         updateRow(idx, {
@@ -150,6 +148,15 @@ export function BatchLabelView() {
 
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
     setRunning(false);
+    const counts = { approve: 0, needs_review: 0, reject: 0, other: 0 };
+    for (const r of rowsRef.current) {
+      if (r.result) counts[r.result.overall as OverallVerdict]++;
+      else counts.other++;
+    }
+    setAnnouncement(
+      `Batch complete: ${counts.approve} approved, ${counts.needs_review} need review, ` +
+        `${counts.reject} rejected${counts.other ? `, ${counts.other} could not be processed` : ""}.`,
+    );
   }
 
   function updateRow(idx: number, patch: Partial<BatchRow>) {
@@ -180,6 +187,9 @@ export function BatchLabelView() {
 
   return (
     <div className="space-y-6">
+      <div aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
       <div className="rounded-xl border border-slate-200 bg-white p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">Batch Verification</h2>
@@ -281,13 +291,18 @@ export function BatchLabelView() {
       {rows.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
+            <caption className="sr-only">
+              Batch verification results, {rows.length} label{rows.length === 1 ? "" : "s"}
+            </caption>
             <thead className="bg-slate-50 text-slate-700">
               <tr>
-                <th className="text-left px-4 py-2 font-medium">Image</th>
-                <th className="text-left px-4 py-2 font-medium">Brand</th>
-                <th className="text-left px-4 py-2 font-medium">Status</th>
-                <th className="text-left px-4 py-2 font-medium">Verdict</th>
-                <th className="px-4 py-2 font-medium" />
+                <th scope="col" className="text-left px-4 py-2 font-medium">Image</th>
+                <th scope="col" className="text-left px-4 py-2 font-medium">Brand</th>
+                <th scope="col" className="text-left px-4 py-2 font-medium">Status</th>
+                <th scope="col" className="text-left px-4 py-2 font-medium">Verdict</th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  <span className="sr-only">Details</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

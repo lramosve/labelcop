@@ -36,6 +36,7 @@ function fakeResult(overrides: Partial<VerificationResult> = {}): VerificationRe
       observedText: "(1) ...",
       issues: [],
     },
+    imageQuality: { readable: true, issues: [] },
     notes: [],
     latencyMs: 2700,
     provider: "openai",

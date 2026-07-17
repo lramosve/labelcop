@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { validateImageFile } from "@/lib/verifier/client";
 
 interface Props {
   file: File | null;
@@ -11,13 +12,24 @@ interface Props {
 export function UploadZone({ file, previewUrl, onChange }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [rejection, setRejection] = useState<string | null>(null);
 
   const accept = (f: File | null) => {
     if (!f) {
+      setRejection(null);
       onChange(null);
       return;
     }
-    if (!f.type.startsWith("image/")) return;
+    if (!f.type.startsWith("image/")) {
+      setRejection("That file doesn't look like an image. Please choose a PNG, JPEG, WEBP, or GIF.");
+      return;
+    }
+    const sizeError = validateImageFile(f);
+    if (sizeError) {
+      setRejection(sizeError);
+      return;
+    }
+    setRejection(null);
     onChange(f);
   };
 
@@ -69,14 +81,26 @@ export function UploadZone({ file, previewUrl, onChange }: Props) {
             <div className="text-sm">or click to browse — PNG, JPEG, WEBP, or GIF</div>
           </div>
         )}
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          className="hidden"
-          onChange={(e) => accept(e.target.files?.[0] ?? null)}
-        />
       </div>
+      {/* Kept as a sibling, not a child, of the role="button" div above —
+          nesting a real <input> inside another interactive control is an
+          accessibility violation (axe: nested-interactive) regardless of
+          aria-hidden/tabIndex, since it's still structurally focusable by
+          some assistive tech. */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={(e) => accept(e.target.files?.[0] ?? null)}
+      />
+      {rejection && (
+        <div role="alert" className="mt-2 text-sm text-red-700">
+          {rejection}
+        </div>
+      )}
       {file && (
         <div className="mt-2 flex items-center justify-between text-sm text-slate-600">
           <span className="truncate">{file.name}</span>

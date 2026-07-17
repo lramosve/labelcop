@@ -217,6 +217,99 @@ describe("finalizeResult — country of origin is optional", () => {
   });
 });
 
+describe("finalizeResult — beverage-type-specific alcohol-content rules", () => {
+  it("does not reject a wine claim with no numeric ABV on the label", () => {
+    const result = withCtx(
+      {
+        overall: "needs_review",
+        fields: [
+          field("brandName", "exact_match"),
+          field("alcoholContent", "missing", null),
+        ],
+        governmentWarning: compliantWarning(),
+        notes: [],
+      },
+      { ...BASE_CLAIM, beverageType: "wine", alcoholContent: "Table Wine" },
+    );
+    // ABV disclosure isn't mandatory for wine — a missing numeric ABV alone
+    // shouldn't drive a reject.
+    expect(result.overall).toBe("approve");
+  });
+
+  it("does not reject a beer claim with no ABV statement on the label", () => {
+    const result = withCtx(
+      {
+        overall: "needs_review",
+        fields: [
+          field("brandName", "exact_match"),
+          field("alcoholContent", "missing", null),
+        ],
+        governmentWarning: compliantWarning(),
+        notes: [],
+      },
+      { ...BASE_CLAIM, beverageType: "beer", alcoholContent: "5.2% ABV" },
+    );
+    expect(result.overall).toBe("approve");
+  });
+
+  it("still rejects a spirits claim with no ABV statement on the label", () => {
+    const result = withCtx(
+      {
+        overall: "needs_review",
+        fields: [
+          field("brandName", "exact_match"),
+          field("alcoholContent", "missing", null),
+        ],
+        governmentWarning: compliantWarning(),
+        notes: [],
+      },
+      { ...BASE_CLAIM, beverageType: "spirits" },
+    );
+    // ABV disclosure is always mandatory for spirits.
+    expect(result.overall).toBe("reject");
+  });
+
+  it("still rejects a wine claim whose ABV genuinely mismatches (not just missing)", () => {
+    const result = withCtx(
+      {
+        overall: "needs_review",
+        fields: [
+          field("brandName", "exact_match"),
+          field("alcoholContent", "mismatch", "18% Alc./Vol."),
+        ],
+        governmentWarning: compliantWarning(),
+        notes: [],
+      },
+      { ...BASE_CLAIM, beverageType: "wine", alcoholContent: "12% Alc./Vol." },
+    );
+    // A genuine mismatch (not merely absent) is still a real discrepancy.
+    expect(result.overall).toBe("reject");
+  });
+});
+
+describe("finalizeResult — image quality pass-through", () => {
+  it("defaults imageQuality to readable/no-issues when the model omits it", () => {
+    const result = withCtx({
+      overall: "approve",
+      fields: [field("brandName", "exact_match")],
+      governmentWarning: compliantWarning(),
+      notes: [],
+    });
+    expect(result.imageQuality).toEqual({ readable: true, issues: [] });
+  });
+
+  it("passes through reported image quality issues", () => {
+    const result = withCtx({
+      overall: "needs_review",
+      fields: [field("brandName", "exact_match")],
+      governmentWarning: compliantWarning(),
+      imageQuality: { readable: true, issues: ["glare", "angle"] },
+      notes: [],
+    });
+    expect(result.imageQuality).toEqual({ readable: true, issues: ["glare", "angle"] });
+  });
+});
+
 describe("finalizeResult — passes through provider metadata", () => {
   it("preserves latency, provider and model on the returned result", () => {
     const result = withCtx({
