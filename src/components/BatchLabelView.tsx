@@ -121,6 +121,12 @@ export function BatchLabelView() {
       .filter((r) => imageFiles[imageKey(r.imageFilename)])
       .map((r) => r.rowIndex);
 
+    // Tracked locally (not via rowsRef, which mirrors React state through a
+    // useEffect and can lag a render or two behind the last updateRow calls
+    // made inside this same async function) so the completion count below
+    // is never read before the final results have actually landed.
+    const finalRows = new Map<number, BatchRow>(rows.map((r) => [r.rowIndex, r]));
+
     let cursor = 0;
     async function worker() {
       while (cursor < workQueue.length) {
@@ -138,18 +144,18 @@ export function BatchLabelView() {
       try {
         const data = await verifyLabel(image, row.claim);
         updateRow(idx, { status: "done", result: data });
+        finalRows.set(idx, { ...row, status: "done", result: data });
       } catch (e) {
-        updateRow(idx, {
-          status: "error",
-          error: e instanceof Error ? e.message : String(e),
-        });
+        const error = e instanceof Error ? e.message : String(e);
+        updateRow(idx, { status: "error", error });
+        finalRows.set(idx, { ...row, status: "error", error });
       }
     }
 
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
     setRunning(false);
     const counts = { approve: 0, needs_review: 0, reject: 0, other: 0 };
-    for (const r of rowsRef.current) {
+    for (const r of finalRows.values()) {
       if (r.result) counts[r.result.overall as OverallVerdict]++;
       else counts.other++;
     }
